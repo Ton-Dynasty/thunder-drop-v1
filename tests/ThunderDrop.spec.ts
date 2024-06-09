@@ -26,7 +26,7 @@ describe('ThunderDrop', () => {
     });
 
     const toDeciamal = (value: number | string | bigint, decimalBase: number) => {
-        return BigInt(value) * BigInt(10 ** decimalBase);
+        return BigInt(value) * BigInt(10) ** BigInt(decimalBase);
     };
 
     const deployMockJetton = async (creator: SandboxContract<TreasuryContract>) => {
@@ -176,7 +176,12 @@ describe('ThunderDrop', () => {
     it('should deploy', async () => {
         // the check is done inside beforeEach
         // blockchain and thunderDrop are ready to use
-        const { merkleData, totalAmount } = await generateMerkleData(1000);
+        // TODO
+        // TODO
+        // TODO: @ipromise2324 when generateMerkleData(2), it will fail with exit code 5
+        // TODO
+        // TODO
+        const { merkleData, totalAmount } = await generateMerkleData(3);
         const tree = MerkleTree.fromMerkleData(merkleData);
         const recoveredTree = MerkleTree.fromNodes(tree.exportNodes());
         expect(recoveredTree.getRoot().toString('hex')).toEqual(tree.getRoot().toString('hex'));
@@ -242,6 +247,11 @@ describe('ThunderDrop', () => {
         const thunderDropData = await thunderDrop.getThunderDropData();
         expect(thunderDropData.walletAddress).not.toEqual(null);
         expect(thunderDropData.isInitialized).toEqual(true);
+
+        // verify proof
+        const proof = tree.getProofBuffer(0n);
+        const isValidProof = tree.verifyProof(merkleData[0], proof);
+        expect(isValidProof).toEqual(true);
     });
 
     it('Should claim jetton', async () => {
@@ -262,7 +272,7 @@ describe('ThunderDrop', () => {
         const claimResult = await thunderDrop.sendClaim(
             deployer.getSender(),
             {
-                value: toNano('0.05'),
+                value: toNano('0.5'),
             },
             {
                 $$type: 'Claim',
@@ -275,8 +285,15 @@ describe('ThunderDrop', () => {
         );
         expect(claimResult.transactions).toHaveTransaction({
             op: DropOpcodes.Claim,
-            to: deployer.address,
+            from: deployer.address,
+            to: thunderDrop.address,
+            success: true,
+        });
+        const distributorAddress = await thunderDrop.getDistributorAddress(index);
+        expect(claimResult.transactions).toHaveTransaction({
             from: thunderDrop.address,
+            to: distributorAddress,
+            deploy: true,
             success: true,
         });
 

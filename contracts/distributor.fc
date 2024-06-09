@@ -16,7 +16,7 @@ global int distributor::claim_word; ;; claim word of the distributor
     s.end_parse();
 }
 
-() distributor::store_data() impure inline_ref {
+() distributor::save_data() impure inline_ref {
     set_data(
         begin_cell()
             .store_uint(distributor::prefix, 256)
@@ -45,7 +45,7 @@ global int distributor::claim_word; ;; claim word of the distributor
         throw_unless(error::permission_denied, equal_slices(ctx::sender, distributor::thunder_drop));
 
         ;; TODO: calculate gas
-        int value = ctx::value - 50000000; ;; 0.05 TON
+        int value = ctx::value - 20000000; ;; 0.02 TON
 
         slice sender = ctx::body~load_msg_addr();
         int index = ctx::body~load_uint(256);
@@ -56,7 +56,6 @@ global int distributor::claim_word; ;; claim word of the distributor
             transfer_ton(NON_BOUNCEABLE, distributor::thunder_drop, value, body, SEND_MODE_REGULAR);
             return ();
         }
-        
         ;; set claim bit
         int claim_bit_index = index % 256;
         distributor::claim_word |= (1 << claim_bit_index);
@@ -66,7 +65,7 @@ global int distributor::claim_word; ;; claim word of the distributor
         transfer_ton(NON_BOUNCEABLE, distributor::thunder_drop, value, body, SEND_MODE_REGULAR);
 
         ;; store data
-        distributor::store_data();
+        distributor::save_data();
         return ();
     }
 

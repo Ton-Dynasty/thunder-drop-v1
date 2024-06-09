@@ -64,9 +64,10 @@
         
         ;; deploy and send claim internal distributor contract, prevent from double claim
         int prefix = index / 256;
-        cell state_init = pack_distributor_data(prefix, my_address());
+        cell state_init = calculate_distributor_state_init(prefix, my_address(), airdrop::distributor_code);
         slice distributor_address = get_address(state_init);
         cell body = pack_claim_internal(query_id, ctx::sender, index, account, amount);
+
         deploy(BOUNCEABLE, distributor_address, value, body, state_init, SEND_MODE_REGULAR);
 
         return ();
@@ -210,7 +211,7 @@ cell get_content() method_id {
 slice get_distributor_address(int index) method_id {
     airdrop::load_data();
     int prefix = index / 256;
-    cell state_init = pack_distributor_data(prefix, my_address());
+    cell state_init = calculate_distributor_state_init(prefix, my_address(), airdrop::distributor_code);
     return get_address(state_init);
 }
 

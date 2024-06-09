@@ -142,7 +142,7 @@ export function storeClaim(src: Claim) {
         b.storeAddress(src.account);
         b.storeCoins(src.amount);
         b.storeUint(src.merkleProof.size, 32);
-        b.storeDictDirect(src.merkleProof);
+        b.storeDict(src.merkleProof);
     };
 }
 
@@ -370,7 +370,7 @@ export class MerkleTree {
     constructor(data: Buffer[], skipBuild: boolean = false) {
         if (skipBuild) {
             this.nodes = data;
-            this.leafCount = (data.length + 1) / 2;
+            this.leafCount = Math.floor((data.length + 1) / 2);
         } else {
             let leaves = data;
 
@@ -385,11 +385,11 @@ export class MerkleTree {
         }
     }
 
-    private leafHashFunction(a: MerkleData): Buffer {
+    leafHashFunction(a: MerkleData): Buffer {
         return beginCell().storeUint(a.index, 256).storeAddress(a.account).storeCoins(a.amount).endCell().hash();
     }
 
-    private layerHashFunction(a: Buffer, b: Buffer): Buffer {
+    layerHashFunction(a: Buffer, b: Buffer): Buffer {
         let intA = a.length === 0 ? 0n : bufferToBigInt(a);
         let intB = b.length === 0 ? 0n : bufferToBigInt(b);
         if (intA > intB) {
@@ -403,10 +403,10 @@ export class MerkleTree {
         let offset = 0;
 
         while (nodes.length < 2 * leaves.length - 1) {
-            const currentLayerSize = Math.pow(2, Math.floor(Math.log2(nodes.length + 1)));
-            for (let i = offset; i < offset + currentLayerSize; i += 2) {
-                const left = nodes[i];
-                const right = i + 1 < nodes.length ? nodes[i + 1] : Buffer.alloc(0);
+            const currentLayerSize = nodes.length - offset;
+            for (let i = 0; i < currentLayerSize; i += 2) {
+                const left = nodes[offset + i];
+                const right = i + 1 < currentLayerSize ? nodes[offset + i + 1] : Buffer.alloc(0);
                 nodes.push(this.layerHashFunction(left, right));
             }
             offset += currentLayerSize;
@@ -414,34 +414,36 @@ export class MerkleTree {
 
         return nodes;
     }
-
     getRoot(): Buffer {
         return this.nodes[this.nodes.length - 1];
     }
 
-    private getProofInternal(index: bigint): Buffer[] {
+    private getProofInternal(index: number): Buffer[] {
         let proof: Buffer[] = [];
-        let currentLayerSize = this.leafCount;
         let nodeIndex = index;
+        let offset = 0;
+        let layerSize = this.leafCount;
 
-        while (currentLayerSize > 1) {
-            const pairIndex = nodeIndex % 2n === 0n ? nodeIndex + 1n : nodeIndex - 1n;
-            if (pairIndex < currentLayerSize) {
-                proof.push(this.nodes[Number(pairIndex)]);
+        while (layerSize > 1) {
+            const pairIndex = nodeIndex ^ 1;
+            if (pairIndex < layerSize) {
+                proof.push(this.nodes[offset + pairIndex]);
             }
-            nodeIndex = BigInt(Math.floor(Number(nodeIndex) / 2) + this.leafCount);
-            currentLayerSize = Math.floor(currentLayerSize / 2);
+
+            nodeIndex >>= 1;
+            offset += layerSize;
+            layerSize >>= 1;
         }
 
         return proof;
     }
 
     getProofBuffer(index: bigint): Buffer[] {
-        return this.getProofInternal(index);
+        return this.getProofInternal(Number(index));
     }
 
     getProof(index: bigint): Dictionary<bigint, bigint> {
-        const proof = this.getProofInternal(index);
+        const proof = this.getProofInternal(Number(index));
         const dict = Dictionary.empty(Dictionary.Keys.BigUint(32), Dictionary.Values.BigUint(256));
         for (let i = 0; i < proof.length; i++) {
             dict.set(BigInt(i), bufferToBigInt(proof[i]));
@@ -449,18 +451,17 @@ export class MerkleTree {
         return dict;
     }
 
-    verifyProof(leaf: MerkleData, proof: Buffer[], root: Buffer): boolean {
+    verifyProof(leaf: MerkleData, proof: Buffer[]): boolean {
         let hash = this.leafHashFunction(leaf);
         for (const proofElement of proof) {
             hash = this.layerHashFunction(hash, proofElement);
         }
-        return hash.equals(root);
+        return hash.equals(this.getRoot());
     }
 
     getLeaves(): Buffer[] {
         return this.nodes.slice(0, this.leafCount);
     }
-
     static fromMerkleData(data: MerkleData[]): MerkleTree {
         const leaves = data.map((item) =>
             beginCell().storeUint(item.index, 256).storeAddress(item.account).storeCoins(item.amount).endCell().hash(),
@@ -475,5 +476,17 @@ export class MerkleTree {
 
     exportNodes(): string[] {
         return this.nodes.map((hash) => hash.toString('hex'));
+    }
+
+    display() {
+        let offset = 0;
+        let layerSize = this.leafCount;
+        while (layerSize > 0) {
+            for (let i = offset; i < offset + layerSize; i++) {
+                console.log(layerSize, this.nodes[i].toString('hex'));
+            }
+            offset += layerSize;
+            layerSize = Math.floor(layerSize / 2);
+        }
     }
 }
