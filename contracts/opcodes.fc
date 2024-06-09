@@ -1,0 +1,24 @@
+;; common opcodes
+const op::comments = 0;
+const op::top_up = 0xd372158c;
+
+;; jetton opcodes
+const op::provide_wallet_address = 0x2c76b973;
+const op::take_wallet_address = 0xd1735400;
+const op::transfer_notification = 0x7362d09c;
+const op::internal_transfer = 0x178d4519;
+const op::transfer = 0xf8a7ea5;
+const op::excesses = 0xd53276db;
+const op::burn = 0x595f07bc;
+const op::burn_notification = 0x7bdd97de;
+const op::mint = 0x642b7d07;
+const op::provide_wallet_address = 0x2c76b973;
+const op::take_wallet_address = 0xd1735400;
+
+
+;; contract opcodes
+const op::claim = "claim"c; ;; a769de27
+const op::withdraw = "withdraw"c; ;; b5de5f9e
+const op::claim_internal = "claim_internal"c; ;; ca03fb47
+const op::claim_internal_relpy = "claim_internal_reply"c; ;; d4a4cd9c
+const op::upgrade = "upgrade"c; ;; b766741a

@@ -1,0 +1,202 @@
+#include "imports/stdlib.fc";
+#include "./storages.fc";
+#include "./errors.fc";
+#include "./opcodes.fc";
+#include "./constants.fc";
+#include "./utils.fc";
+
+(int) sha256(int a, int b) inline {
+    return begin_cell().store_uint(a, 256).store_uint(b, 256).end_cell().cell_hash();
+}
+
+(int) hash_pair(int a, int b) inline {
+    return a < b ? sha256(a, b) : sha256(b, a);
+}
+
+(int) verify(int index, slice account, int amount, int proof_size, cell merkle_proof) inline {
+    int computed_hash = begin_cell().store_uint(index, 256).store_slice(account).store_coins(amount).end_cell().cell_hash();
+    int i = 0;
+    while (i < proof_size) {
+        (slice s, int ok?) = udict_get?(merkle_proof, 32, i);
+        throw_unless(error::invalid_params, ok?);
+        computed_hash = hash_pair(computed_hash, s~load_uint(256));
+        i += 1;
+    }
+    return computed_hash == airdrop::merkle_root;
+}
+
+() route_internal(slice ctx::sender, int ctx::value, int ctx::fwd_fee, slice ctx::body) impure inline {
+    ;; load op and query id
+    (int op, int query_id) = ctx::body~load_op_and_query_id();
+
+    ;; Load data from storage
+    airdrop::load_data();
+
+    if op == op::claim {
+        throw_unless(error::not_initialized, airdrop::is_initialized);
+        throw_unless(error::not_started, now() >= airdrop::start_time);
+        throw_unless(error::finished, now() <= airdrop::end_time);
+
+        int index = ctx::body~load_uint(256);
+        slice account = ctx::body~load_msg_addr();
+        int amount = ctx::body~load_coins();
+        int proof_size = ctx::body~load_uint(32); ;; element count of merkle proof
+        cell merkle_proof = ctx::body~load_dict();
+        ctx::body.end_parse();
+
+        ;; TODO: check if gas is enough
+        int value = ctx::value - get_compute_fee(MY_WORKCHAIN, CLAIM_FEE);
+
+        ;; check if there is enough jetton to claim
+        throw_unless(error::permission_denied, airdrop::total_amount >= amount);
+
+        ;; deduct amount from total_amount, if user has already claimed, then distributor
+        ;; contract will send fail message to this contract, and this contract will
+        ;; add bounced amount back to total_amount
+        airdrop::total_amount -= amount;
+
+        ;; pending +1 to prevent admin withdraw jetton. When receive any claim_internal_relpy, then pending -1
+        airdrop::pending += 1;
+        
+        ;; verify merkle proof, throw if invalid
+        int ok? = verify(index, account, amount, proof_size, merkle_proof);
+        throw_unless(error::invalid_proof, ok?);
+        
+        ;; deploy and send claim internal distributor contract, prevent from double claim
+        int prefix = index / 256;
+        cell state_init = pack_distributor_data(prefix, my_address());
+        slice distributor_address = get_address(state_init);
+        cell body = pack_claim_internal(query_id, ctx::sender, index, account, amount);
+        deploy(BOUNCEABLE, distributor_address, value, body, state_init, SEND_MODE_REGULAR);
+
+        return ();
+    }
+
+    if op == op::claim_internal_relpy {
+        ;; load data from message
+        slice sender = ctx::body~load_msg_addr(); ;; the one who call claim
+        int index = ctx::body~load_uint(256);
+        slice account = ctx::body~load_msg_addr();
+        int amount = ctx::body~load_coins();
+        int success = ctx::body~load_bool();
+
+        ;; TODO: gas processing
+        int ton_amount = ctx::value - get_compute_fee(MY_WORKCHAIN, CLAIM_INTERNAL_FEE);
+
+        ;; get distributor state init and distributor address
+        int prefix = index / 256;
+        cell distributor_state_init = calculate_distributor_state_init(prefix, my_address(), airdrop::distributor_code);
+        slice distributor_address = get_address(distributor_state_init);
+
+        ;; check ctx::sender is from distributor contract
+        throw_unless(error::permission_denied, equal_slices(ctx::sender, distributor_address));
+
+        ;; if not success, then add amount back to total_amount, and refund ton to the one who call claim
+        if (~ success) |  (airdrop::total_amount < amount) {
+            airdrop::total_amount += amount;
+            airdrop::pending -= 1;
+            transfer_ton(BOUNCEABLE, sender, ton_amount, begin_cell().store_op(0).store_slice("claim failed").end_cell(), SEND_MODE_REGULAR);
+            airdrop::save_data();
+            return ();
+        }
+
+        ;; otherwise, success, then send jetton to account
+        airdrop::pending -= 1;
+        transfer_jetton(BOUNCEABLE, account, airdrop::wallet_address, amount, ton_amount, query_id, null(), 0, SEND_MODE_REGULAR);
+        airdrop::save_data();
+        return ();
+    }
+
+    if op == op::transfer_notification {
+        ;; only receive jetton from specific jetton wallet, everyone can send jetton to this contract
+        throw_unless(error::permission_denied, equal_slices(ctx::sender, airdrop::wallet_address));
+
+        int jetton_amount = ctx::body~load_coins();
+
+        airdrop::total_amount += jetton_amount;
+
+        ;; if contract is not initialized, then check if total_amount is enough
+        if ~ airdrop::is_initialized {
+            airdrop::is_initialized = (airdrop::total_amount >= airdrop::expected_amount);
+        }
+
+        airdrop::save_data();
+    }
+
+    if op == op::withdraw {
+        ;; owner can withdraw all jetton and ton in the contract after deadline
+        throw_unless(error::permission_denied, equal_slices(ctx::sender, airdrop::admin_address));
+        throw_unless(error::pending_claim, airdrop::pending == 0);
+        throw_unless(error::not_finished, now() > airdrop::end_time);
+
+        transfer_jetton(BOUNCEABLE, airdrop::admin_address, airdrop::wallet_address, airdrop::total_amount, 0, query_id, null(), 0, SEND_MODE_CARRY_ALL_BALANCE);
+    }
+
+    if op == op::upgrade {
+        ;; only admin can upgrade the contract without any restrictions
+        throw_unless(error::permission_denied, equal_slices(ctx::sender, airdrop::admin_address));
+        cell new_code = ctx::body~load_ref();
+        cell new_data = ctx::body~load_maybe_ref();
+        ctx::body.end_parse();
+        set_code(new_code);
+        if (~ cell_null?(new_data)) {
+            set_data(new_data);
+        }
+        return ();
+    }
+
+    if op == op::take_wallet_address {
+        ;; throw when contract is already initialized
+        throw_if(error::is_initialized, airdrop::is_initialized);
+
+        ;; check if sender is jetton master
+        throw_unless(error::permission_denied, equal_slices(ctx::sender, airdrop::master_address));
+
+        slice wallet_address = ctx::body~load_msg_addr();
+        airdrop::wallet_address = wallet_address;
+        airdrop::save_data();
+    }
+
+    if op == op::top_up {
+        ;; if already initialized, do nothing
+        if (airdrop::is_initialized) {
+            return ();
+        }
+
+        ;; deployer will call top_up when deploy the contract
+        ;; send provide_wallet_address to airdrop::master_address contract to get wallet address
+        int value = (ctx::value - get_compute_fee(MY_WORKCHAIN, TOP_UP_FEE));
+        cell msg = pack_provide_wallet_address(query_id, value);
+        send_raw_message(msg, SEND_MODE_REGULAR);
+        return ();
+    }
+
+    throw(error::invalid_op);
+}
+
+() main(int ctx::value, cell in_msg_full, slice ctx::body) impure {
+    slice s = in_msg_full.begin_parse();
+    int flags = s~load_msg_flags();
+
+    if (is_bounced(flags)) { ;; skip bounced message
+        return ();
+    }
+    
+    ;; get context
+    (slice ctx::sender, int ctx::fwd_fee) = s~retrieve_ctx(MY_WORKCHAIN);
+
+    ;; route function to handle internal message
+    route_internal(ctx::sender, ctx::value, ctx::fwd_fee, ctx::body);
+}
+
+cell get_content() method_id {
+    airdrop::load_data();
+    return airdrop::content;
+}
+
+slice get_distributor_address(int index) method_id {
+    airdrop::load_data();
+    int prefix = index / 256;
+    cell state_init = pack_distributor_data(prefix, my_address());
+    return get_address(state_init);
+}

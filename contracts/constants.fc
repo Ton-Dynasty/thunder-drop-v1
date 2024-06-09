@@ -1,0 +1,4 @@
+;; provide_wallet_address => 5000 gas-units + msg_forward_prices.lump_price + msg_forward_prices.cell_price = 0.0061 TON
+const TOP_UP_FEE = 10000;
+const CLAIM_FEE = 10000;
+const CLAIM_INTERNAL_FEE = 15000;

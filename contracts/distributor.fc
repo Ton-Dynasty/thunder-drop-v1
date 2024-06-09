@@ -1,0 +1,102 @@
+#include "imports/stdlib.fc";
+#include "./errors.fc";
+#include "./opcodes.fc";
+#include "./constants.fc";
+#include "./utils.fc";
+
+global int distributor::prefix; ;; prefix of the distributor, for example, if index is 277, then it will allocate to 277/256 = 1th distributor
+global slice distributor::thunder_drop; ;; address of thunder drop contract
+global int distributor::claim_word; ;; claim word of the distributor
+
+() distributor::load_data() impure inline {
+    slice s = get_data().begin_parse();
+    distributor::prefix = s~load_uint(256);
+    distributor::thunder_drop = s~load_msg_addr();
+    distributor::claim_word = s~load_uint(256);
+    s.end_parse();
+}
+
+() distributor::store_data() impure inline_ref {
+    set_data(
+        begin_cell()
+            .store_uint(distributor::prefix, 256)
+            .store_slice(distributor::thunder_drop)
+            .store_uint(distributor::claim_word, 256)
+        .end_cell()
+    );
+}
+
+(int) is_claimed(int index) inline {
+    int claim_bit_index = index % 256;
+    int mask = (1 << claim_bit_index);
+    return (distributor::claim_word & mask) == mask;
+}
+
+
+() route_internal(slice ctx::sender, int ctx::value, int ctx::fwd_fee, slice ctx::body) impure inline {
+    ;; load op and query id
+    (int op, int query_id) = ctx::body~load_op_and_query_id();
+
+    ;; Load data from storage
+    airdrop::load_data();
+
+    if op == op::claim_internal {
+        ;; check ctx::sender is thunder drop contract
+        throw_unless(error::permission_denied, ctx::sender == distributor::thunder_drop);
+
+        ;; TODO: calculate gas
+        int value = ctx::value - 50_000_000;
+
+        slice sender = ctx::body~load_msg_addr();
+        int index = ctx::body~load_uint(256);
+        slice account = ctx::body~load_msg_addr();
+        int amount = ctx::body~load_coins();
+        if (is_claimed(index)) {
+            cell body = pack_claim_internal_reply(query_id, sender, index, account, amount, FALSE);
+            transfer_ton(NON_BOUNCEABLE, distributor::thunder_drop, value, body, SEND_MODE_REGULAR);
+            return ();
+        }
+        
+        ;; set claim bit
+        int claim_bit_index = index % 256;
+        distributor::claim_word |= (1 << claim_bit_index);
+
+        ;; send claim_internal_reply
+        cell body = pack_claim_internal_reply(query_id, sender, index, account, amount, TRUE);
+        transfer_ton(NON_BOUNCEABLE, distributor::thunder_drop, value, body, SEND_MODE_REGULAR);
+
+        ;; store data
+        distributor::store_data();
+    }
+
+    throw(error::invalid_op);
+}
+
+() main(int ctx::value, cell in_msg_full, slice ctx::body) impure {
+    slice s = in_msg_full.begin_parse();
+    int flags = s~load_msg_flags();
+
+    if (is_bounced(flags)) { ;; skip bounced message
+        return ();
+    }
+
+    ;; get context
+    (slice ctx::sender, int ctx::fwd_fee) = s~retrieve_ctx(MY_WORKCHAIN);
+
+    ;; route function to handle internal message
+    route_internal(ctx::sender, ctx::value, ctx::fwd_fee, ctx::body);
+}
+
+(int, slice, int) get_data() method_id {
+    distributor::load_data();
+    return (
+        distributor::prefix,
+        distributor::thunder_drop,
+        distributor::claim_word
+    );
+}
+
+(int) get_is_claimed(int index) method_id {
+    distributor::load_data();
+    return is_claimed(index);
+}

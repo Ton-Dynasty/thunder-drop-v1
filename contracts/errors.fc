@@ -1,0 +1,18 @@
+;; general errors
+const error::invalid_op = 0xffff;
+
+
+;; workchain errors
+const error::wrong_workchain = 333;
+
+;; custom errors
+const error::permission_denied = 500;
+const error::not_started = 501;
+const error::finished = 502;
+const error::invalid_proof = 503;
+const error::invalid_params = 504;
+const error::already_claimed = 505;
+const error::not_initialized = 506;
+const error::is_initialized = 507;
+const error::pending_claim = 508;
+const error::not_finished = 509;

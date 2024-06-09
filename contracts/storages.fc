@@ -1,0 +1,51 @@
+global int airdrop::is_initialized;  ;; whether the distributor is initialized
+global int airdrop::pending;         ;; number of pending claim transactions, admin cannot withdraw jetton if pending > 0
+global int airdrop::total_amount;    ;; current amount of jetton to be distributed
+global int airdrop::expected_amount; ;; expected amount of jetton to be distributed
+global int airdrop::merkle_root;     ;; merkle root of the distributor
+global int airdrop::start_time;      ;; the start time of the distributor
+global int airdrop::end_time;        ;; the end time of the distributor
+global slice airdrop::master_address; ;; the address of jetton master to be distributed
+global slice airdrop::wallet_address; ;; jetton wallet address of this contract
+global slice airdrop::admin_address; ;; the address of the admin
+global cell airdrop::distributor_code;    ;; child contract cell for user distribution
+global cell airdrop::content;        ;; extra information for this contract, include uri which stores the distribution information
+
+() airdrop::load_data() impure inline_ref {
+    slice ds = get_data().begin_parse();
+    airdrop::is_initialized = ds~load_uint(1);
+    airdrop::pending = ds~load_uint(32);
+    airdrop::total_amount = ds~load_coins();
+    airdrop::expected_amount = ds~load_coins();
+    airdrop::merkle_root = ds~load_uint(256);
+    airdrop::start_time = ds~load_uint(32);
+    airdrop::end_time = ds~load_uint(32);
+
+    slice address_cell = ds~load_ref().begin_parse();
+    airdrop::master_address = address_cell~load_msg_addr();
+    airdrop::wallet_address = address_cell~load_msg_addr();
+    airdrop::admin_address = address_cell~load_msg_addr();
+
+    airdrop::distributor_code = ds~load_ref();
+    airdrop::content = ds~load_ref();
+    ds.end_parse();
+}
+
+() airdrop::save_data() impure inline_ref {
+    set_data(begin_cell()
+        .store_int(airdrop::is_initialized, 1)
+        .store_int(airdrop::pending, 32)
+        .store_coins(airdrop::total_amount)
+        .store_coins(airdrop::expected_amount)
+        .store_int(airdrop::merkle_root, 256)
+        .store_int(airdrop::start_time, 32)
+        .store_int(airdrop::end_time, 32)
+        .store_ref(begin_cell()
+            .store_slice(airdrop::master_address)
+            .store_slice(airdrop::wallet_address)
+            .store_slice(airdrop::admin_address)
+            .end_cell())
+        .store_ref(airdrop::distributor_code)
+        .store_ref(airdrop::content)
+    .end_cell());
+}
