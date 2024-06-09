@@ -1,6 +1,13 @@
 import { Blockchain, SandboxContract, TreasuryContract, prettyLogTransactions } from '@ton/sandbox';
 import { Address, Cell, beginCell, toNano } from '@ton/core';
-import { MerkleData, ThunderDrop, bufferToBigInt, MerkleTree, DropOpcodes } from '../wrappers/ThunderDrop';
+import {
+    MerkleData,
+    ThunderDrop,
+    bufferToBigInt,
+    MerkleTree,
+    DropOpcodes,
+    DropExitCodes,
+} from '../wrappers/ThunderDrop';
 import '@ton/test-utils';
 import { compile } from '@ton/blueprint';
 import { JettonMinter } from '../wrappers/JettonMinter';
@@ -146,7 +153,7 @@ describe('ThunderDrop', () => {
     const getJettonBalance = async (jetton: SandboxContract<JettonMinter>, account: Address) => {
         const accountJettonWalletAddress = await jetton.getWalletAddress(account);
         const accountJettonWallet = blockchain.openContract(JettonWallet.createFromAddress(accountJettonWalletAddress));
-        return accountJettonWallet.getJettonBalance();
+        return await accountJettonWallet.getJettonBalance();
     };
 
     const setupThunderDrop = async (args: { sampleSize: number }) => {
@@ -256,7 +263,7 @@ describe('ThunderDrop', () => {
     });
 
     it('Should claim jetton', async () => {
-        const { merkleData, tree, jetton, thunderDrop } = await setupThunderDrop({ sampleSize: 1000 });
+        const { merkleData, tree, jetton, thunderDrop } = await setupThunderDrop({ sampleSize: 10 });
         const index = 0n;
         const account = merkleData[0].account;
         const amount = merkleData[0].amount;
@@ -308,5 +315,68 @@ describe('ThunderDrop', () => {
         // get account jetton balance after claim
         const accountBalanceAfter = await getJettonBalance(jetton, account);
         expect(accountBalanceAfter).toEqual(accountBalanceBefore + amount);
+    });
+
+    it("Should fail to withdraw if it's not the end time", async () => {
+        const { thunderDrop } = await setupThunderDrop({ sampleSize: 10 });
+        const result = await thunderDrop.sendWithdraw(
+            deployer.getSender(),
+            { value: toNano('0.5') },
+            {
+                $$type: 'Withdraw',
+                queryId: 0n,
+            },
+        );
+        expect(result.transactions).toHaveTransaction({
+            op: DropOpcodes.Withdraw,
+            from: deployer.address,
+            to: thunderDrop.address,
+            success: false,
+            exitCode: DropExitCodes.NotFinished,
+        });
+    });
+
+    it("Should withdraw if it's the end time", async () => {
+        const { jetton, thunderDrop } = await setupThunderDrop({ sampleSize: 10 });
+
+        // TODO: @ipromise2324 here is the problem!!
+        const balanceBefore = await getJettonBalance(jetton, deployer.address);
+
+        // set the end time
+        const { endTime, expectedAmount, totalAmount } = await thunderDrop.getThunderDropData();
+        blockchain.now = Number(endTime) + 1;
+
+        // check the total amount is equal to the expected amount
+        expect(expectedAmount).toEqual(totalAmount);
+
+        // After the end time, the thunderDrop can be withdrawn
+        const result = await thunderDrop.sendWithdraw(
+            deployer.getSender(),
+            { value: toNano('0.5') },
+            {
+                $$type: 'Withdraw',
+                queryId: 0n,
+            },
+        );
+        expect(result.transactions).toHaveTransaction({
+            op: DropOpcodes.Withdraw,
+            from: deployer.address,
+            to: thunderDrop.address,
+            success: true,
+        });
+        const { walletAddress } = await thunderDrop.getThunderDropData();
+        expect(result.transactions).toHaveTransaction({
+            op: 0xf8a7ea5, // jetton transfer
+            from: thunderDrop.address,
+            to: walletAddress!,
+            success: true,
+        });
+        expect(result.transactions).toHaveTransaction({
+            op: 0x178d4519, // jetton transfer
+            from: walletAddress!,
+            success: true,
+        });
+        const balanceAfter = await getJettonBalance(jetton, deployer.address);
+        expect(balanceAfter).toBeGreaterThan(balanceBefore);
     });
 });

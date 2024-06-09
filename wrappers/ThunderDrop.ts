@@ -84,6 +84,21 @@ export const DropOpcodes = {
     Upgrade: 0xb766741a,
 };
 
+export const DropExitCodes = {
+    InvalidOpcode: 0xffff,
+    WrongWorkchain: 333,
+    PermissionDenied: 500,
+    NotStarted: 501,
+    Finished: 502,
+    InvalidProof: 503,
+    InvalidParams: 504,
+    AlreadyClaimed: 505,
+    NotInitialized: 506,
+    IsInitialized: 507,
+    PendingClaim: 508,
+    NotFinished: 509,
+};
+
 export const DropError = (exitCode: number) => {
     switch (exitCode) {
         case 0xffff:
