@@ -63,9 +63,10 @@ global int distributor::claim_word; ;; claim word of the distributor
         ;; send claim_internal_reply
         cell body = pack_claim_internal_reply(query_id, sender, index, account, amount, TRUE);
         transfer_ton(NON_BOUNCEABLE, distributor::thunder_drop, value, body, SEND_MODE_REGULAR);
-
+        
         ;; store data
         distributor::save_data();
+
         return ();
     }
 

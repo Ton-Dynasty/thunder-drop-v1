@@ -291,9 +291,16 @@ describe('ThunderDrop', () => {
         });
         const distributorAddress = await thunderDrop.getDistributorAddress(index);
         expect(claimResult.transactions).toHaveTransaction({
+            op: 0xca03fb47, // claim internal
             from: thunderDrop.address,
             to: distributorAddress,
             deploy: true,
+            success: true,
+        });
+        expect(claimResult.transactions).toHaveTransaction({
+            op: 0xd4a4cd9c, // claim internal reply
+            from: distributorAddress,
+            to: thunderDrop.address,
             success: true,
         });
 

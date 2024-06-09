@@ -69,6 +69,7 @@
         cell body = pack_claim_internal(query_id, ctx::sender, index, account, amount);
 
         deploy(BOUNCEABLE, distributor_address, value, body, state_init, SEND_MODE_REGULAR);
+        airdrop::save_data();
 
         return ();
     }
@@ -105,6 +106,7 @@
         airdrop::pending -= 1;
         transfer_jetton(BOUNCEABLE, account, airdrop::wallet_address, amount, ton_amount, query_id, null(), 0, SEND_MODE_REGULAR);
         airdrop::save_data();
+
         return ();
     }
 

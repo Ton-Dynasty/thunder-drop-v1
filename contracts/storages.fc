@@ -13,7 +13,7 @@ global cell airdrop::content;        ;; extra information for this contract, inc
 
 () airdrop::load_data() impure inline_ref {
     slice ds = get_data().begin_parse();
-    airdrop::is_initialized = ds~load_uint(1);
+    airdrop::is_initialized = ds~load_bool();
     airdrop::pending = ds~load_uint(32);
     airdrop::total_amount = ds~load_coins();
     airdrop::expected_amount = ds~load_coins();
@@ -33,13 +33,13 @@ global cell airdrop::content;        ;; extra information for this contract, inc
 
 () airdrop::save_data() impure inline_ref {
     set_data(begin_cell()
-        .store_int(airdrop::is_initialized, 1)
-        .store_int(airdrop::pending, 32)
+        .store_bool(airdrop::is_initialized)
+        .store_uint(airdrop::pending, 32)
         .store_coins(airdrop::total_amount)
         .store_coins(airdrop::expected_amount)
-        .store_int(airdrop::merkle_root, 256)
-        .store_int(airdrop::start_time, 32)
-        .store_int(airdrop::end_time, 32)
+        .store_uint(airdrop::merkle_root, 256)
+        .store_uint(airdrop::start_time, 32)
+        .store_uint(airdrop::end_time, 32)
         .store_ref(begin_cell()
             .store_slice(airdrop::master_address)
             .store_slice(airdrop::wallet_address)
