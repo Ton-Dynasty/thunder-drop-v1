@@ -67,6 +67,7 @@ global int distributor::claim_word; ;; claim word of the distributor
 
         ;; store data
         distributor::store_data();
+        return ();
     }
 
     throw(error::invalid_op);
