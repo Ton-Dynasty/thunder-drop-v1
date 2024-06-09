@@ -108,11 +108,13 @@
     }
 
     if op == op::transfer_notification {
+        ;; throw if wallet address is not set
+        throw_if(error::not_initialized, is_address_none(airdrop::wallet_address));
+
         ;; only receive jetton from specific jetton wallet, everyone can send jetton to this contract
         throw_unless(error::permission_denied, equal_slices(ctx::sender, airdrop::wallet_address));
 
         int jetton_amount = ctx::body~load_coins();
-
         airdrop::total_amount += jetton_amount;
 
         ;; if contract is not initialized, then check if total_amount is enough
@@ -121,6 +123,7 @@
         }
 
         airdrop::save_data();
+        return ();
     }
 
     if op == op::withdraw {
@@ -128,8 +131,10 @@
         throw_unless(error::permission_denied, equal_slices(ctx::sender, airdrop::admin_address));
         throw_unless(error::pending_claim, airdrop::pending == 0);
         throw_unless(error::not_finished, now() > airdrop::end_time);
-
+        airdrop::total_amount = 0;
         transfer_jetton(BOUNCEABLE, airdrop::admin_address, airdrop::wallet_address, airdrop::total_amount, 0, query_id, null(), 0, SEND_MODE_CARRY_ALL_BALANCE);
+        airdrop::save_data();
+        return();
     }
 
     if op == op::upgrade {
@@ -154,7 +159,9 @@
 
         slice wallet_address = ctx::body~load_msg_addr();
         airdrop::wallet_address = wallet_address;
+
         airdrop::save_data();
+        return ();
     }
 
     if op == op::top_up {
@@ -172,7 +179,7 @@
         ;; deployer will call top_up when deploy the contract
         ;; send provide_wallet_address to airdrop::master_address contract to get wallet address
         int value = (ctx::value - get_compute_fee(MY_WORKCHAIN, TOP_UP_FEE));
-        cell msg = pack_provide_wallet_address(query_id, value, airdrop::master_address);
+        cell msg = pack_provide_wallet_address(query_id, value, my_address(), airdrop::master_address);
         send_raw_message(msg, SEND_MODE_REGULAR);
         return ();
     }
@@ -207,7 +214,7 @@ slice get_distributor_address(int index) method_id {
     return get_address(state_init);
 }
 
-(int, int, int, int, int, int, int, slice, slice, slice, cell, cell) get_airdrop_data() method_id {
+(int, int, int, int, int, int, int, slice, slice, slice, cell, cell) get_thunderdrop_data() method_id {
     airdrop::load_data();
     return (airdrop::is_initialized, airdrop::pending, airdrop::total_amount, airdrop::expected_amount, airdrop::merkle_root, airdrop::start_time, airdrop::end_time, airdrop::master_address, airdrop::wallet_address, airdrop::admin_address, airdrop::distributor_code, airdrop::content);
 }

@@ -7,8 +7,6 @@ import {
     contractAddress,
     ContractProvider,
     Dictionary,
-    DictionaryKey,
-    DictionaryKeyTypes,
     Sender,
     SendMode,
 } from '@ton/core';
@@ -28,6 +26,7 @@ export type ThunderDropConfigFull = {
     distributorCode: Cell; // code of the distributor contract
     content: Cell; // content of the airdrop, and uri of the airdrop list json file on IPFS
 };
+
 export type ThunderDropConfig = Omit<
     ThunderDropConfigFull,
     'isInitialized' | 'pending' | 'totalAmount' | 'walletAddress'
@@ -323,5 +322,158 @@ export class ThunderDrop implements Contract {
             },
         ]);
         return result.stack.readAddress();
+    }
+    async getThunderDropData(provider: ContractProvider): Promise<ThunderDropConfigFull> {
+        const result = await provider.get('get_thunderdrop_data', []);
+        const isInitialized = result.stack.readBoolean();
+        const pending = result.stack.readBigNumber();
+        const totalAmount = result.stack.readBigNumber();
+        const expectedAmount = result.stack.readBigNumber();
+        const merkleRoot = result.stack.readBigNumber();
+        const startTime = result.stack.readBigNumber();
+        const endTime = result.stack.readBigNumber();
+        const masterAddress = result.stack.readAddress();
+        const walletAddress = result.stack.readAddressOpt();
+        const adminAddress = result.stack.readAddress();
+        const distributorCode = result.stack.readCell();
+        const content = result.stack.readCell();
+        return {
+            isInitialized,
+            pending,
+            totalAmount,
+            expectedAmount,
+            merkleRoot,
+            startTime,
+            endTime,
+            masterAddress,
+            walletAddress,
+            adminAddress,
+            distributorCode,
+            content,
+        };
+    }
+}
+
+export interface MerkleData {
+    index: bigint;
+    account: Address;
+    amount: bigint;
+}
+
+export function bufferToBigInt(buffer: Buffer): bigint {
+    return BigInt(`0x${buffer.toString('hex')}`);
+}
+export class MerkleTree {
+    private nodes: Buffer[];
+    private leafCount: number;
+
+    constructor(data: Buffer[], skipBuild: boolean = false) {
+        if (skipBuild) {
+            this.nodes = data;
+            this.leafCount = (data.length + 1) / 2;
+        } else {
+            let leaves = data;
+
+            // Padding to ensure leaves length is a power of 2
+            const targetLength = Math.pow(2, Math.ceil(Math.log2(leaves.length)));
+            while (leaves.length < targetLength) {
+                leaves.push(Buffer.alloc(0));
+            }
+
+            this.leafCount = leaves.length;
+            this.nodes = this.buildNodes(leaves);
+        }
+    }
+
+    private leafHashFunction(a: MerkleData): Buffer {
+        return beginCell().storeUint(a.index, 256).storeAddress(a.account).storeCoins(a.amount).endCell().hash();
+    }
+
+    private layerHashFunction(a: Buffer, b: Buffer): Buffer {
+        let intA = a.length === 0 ? 0n : bufferToBigInt(a);
+        let intB = b.length === 0 ? 0n : bufferToBigInt(b);
+        if (intA > intB) {
+            [intA, intB] = [intB, intA];
+        }
+        return beginCell().storeUint(intA, 256).storeUint(intB, 256).endCell().hash();
+    }
+
+    private buildNodes(leaves: Buffer[]): Buffer[] {
+        const nodes = [...leaves];
+        let offset = 0;
+
+        while (nodes.length < 2 * leaves.length - 1) {
+            const currentLayerSize = Math.pow(2, Math.floor(Math.log2(nodes.length + 1)));
+            for (let i = offset; i < offset + currentLayerSize; i += 2) {
+                const left = nodes[i];
+                const right = i + 1 < nodes.length ? nodes[i + 1] : Buffer.alloc(0);
+                nodes.push(this.layerHashFunction(left, right));
+            }
+            offset += currentLayerSize;
+        }
+
+        return nodes;
+    }
+
+    getRoot(): Buffer {
+        return this.nodes[this.nodes.length - 1];
+    }
+
+    private getProofInternal(index: bigint): Buffer[] {
+        let proof: Buffer[] = [];
+        let currentLayerSize = this.leafCount;
+        let nodeIndex = index;
+
+        while (currentLayerSize > 1) {
+            const pairIndex = nodeIndex % 2n === 0n ? nodeIndex + 1n : nodeIndex - 1n;
+            if (pairIndex < currentLayerSize) {
+                proof.push(this.nodes[Number(pairIndex)]);
+            }
+            nodeIndex = BigInt(Math.floor(Number(nodeIndex) / 2) + this.leafCount);
+            currentLayerSize = Math.floor(currentLayerSize / 2);
+        }
+
+        return proof;
+    }
+
+    getProofBuffer(index: bigint): Buffer[] {
+        return this.getProofInternal(index);
+    }
+
+    getProof(index: bigint): Dictionary<bigint, bigint> {
+        const proof = this.getProofInternal(index);
+        const dict = Dictionary.empty(Dictionary.Keys.BigUint(32), Dictionary.Values.BigUint(256));
+        for (let i = 0; i < proof.length; i++) {
+            dict.set(BigInt(i), bufferToBigInt(proof[i]));
+        }
+        return dict;
+    }
+
+    verifyProof(leaf: MerkleData, proof: Buffer[], root: Buffer): boolean {
+        let hash = this.leafHashFunction(leaf);
+        for (const proofElement of proof) {
+            hash = this.layerHashFunction(hash, proofElement);
+        }
+        return hash.equals(root);
+    }
+
+    getLeaves(): Buffer[] {
+        return this.nodes.slice(0, this.leafCount);
+    }
+
+    static fromMerkleData(data: MerkleData[]): MerkleTree {
+        const leaves = data.map((item) =>
+            beginCell().storeUint(item.index, 256).storeAddress(item.account).storeCoins(item.amount).endCell().hash(),
+        );
+        return new MerkleTree(leaves);
+    }
+
+    static fromNodes(hexNodes: string[]): MerkleTree {
+        const nodes = hexNodes.map((hex) => Buffer.from(hex, 'hex'));
+        return new MerkleTree(nodes, true);
+    }
+
+    exportNodes(): string[] {
+        return this.nodes.map((hash) => hash.toString('hex'));
     }
 }

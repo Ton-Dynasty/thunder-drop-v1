@@ -83,6 +83,7 @@ slice get_address(cell state_init) inline_ref {
 (cell) pack_provide_wallet_address(
     int query_id,
     int value,
+    slice contract_address,
     slice jetton_master_address
 ) inline {
     cell msg = begin_cell()
@@ -92,7 +93,7 @@ slice get_address(cell state_init) inline_ref {
         .store_only_body_ref(begin_cell()
             .store_op(op::provide_wallet_address)
             .store_query_id(query_id)
-            .store_slice(my_address())
+            .store_slice(contract_address)
             .store_bool(FALSE)
             .end_cell()
     ).end_cell();
