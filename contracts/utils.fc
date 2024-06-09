@@ -82,11 +82,12 @@ slice get_address(cell state_init) inline_ref {
 
 (cell) pack_provide_wallet_address(
     int query_id,
-    int value
+    int value,
+    slice jetton_master_address
 ) inline {
     cell msg = begin_cell()
         .store_msg_flags_and_address_none(BOUNCEABLE)
-        .store_slice(airdrop::master_address) ;; dest
+        .store_slice(jetton_master_address) ;; dest
         .store_coins(value)
         .store_only_body_ref(begin_cell()
             .store_op(op::provide_wallet_address)

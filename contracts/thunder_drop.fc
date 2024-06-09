@@ -162,11 +162,17 @@
         if (airdrop::is_initialized) {
             return ();
         }
+        ;; validation
+        throw_unless(error::permission_denied, equal_slices(ctx::sender, airdrop::admin_address)); ;; only admin can top up
+        throw_unless(error::invalid_params, airdrop::is_initialized == FALSE); ;; contract should not be initialized
+        throw_unless(error::invalid_params, airdrop::end_time > now()); ;; end time should be greater than now
+        throw_unless(error::invalid_params, airdrop::start_time < airdrop::end_time); ;; start time should be less than end time
+        throw_unless(error::invalid_params, airdrop::expected_amount > 0);  ;; expected amount should be greater than 0
 
         ;; deployer will call top_up when deploy the contract
         ;; send provide_wallet_address to airdrop::master_address contract to get wallet address
         int value = (ctx::value - get_compute_fee(MY_WORKCHAIN, TOP_UP_FEE));
-        cell msg = pack_provide_wallet_address(query_id, value);
+        cell msg = pack_provide_wallet_address(query_id, value, airdrop::master_address);
         send_raw_message(msg, SEND_MODE_REGULAR);
         return ();
     }
@@ -199,4 +205,9 @@ slice get_distributor_address(int index) method_id {
     int prefix = index / 256;
     cell state_init = pack_distributor_data(prefix, my_address());
     return get_address(state_init);
+}
+
+(int, int, int, int, int, int, int, slice, slice, slice, cell, cell) get_airdrop_data() method_id {
+    airdrop::load_data();
+    return (airdrop::is_initialized, airdrop::pending, airdrop::total_amount, airdrop::expected_amount, airdrop::merkle_root, airdrop::start_time, airdrop::end_time, airdrop::master_address, airdrop::wallet_address, airdrop::admin_address, airdrop::distributor_code, airdrop::content);
 }

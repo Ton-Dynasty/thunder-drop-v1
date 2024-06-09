@@ -38,14 +38,14 @@ global int distributor::claim_word; ;; claim word of the distributor
     (int op, int query_id) = ctx::body~load_op_and_query_id();
 
     ;; Load data from storage
-    airdrop::load_data();
+    distributor::load_data();
 
     if op == op::claim_internal {
         ;; check ctx::sender is thunder drop contract
-        throw_unless(error::permission_denied, ctx::sender == distributor::thunder_drop);
+        throw_unless(error::permission_denied, equal_slices(ctx::sender, distributor::thunder_drop));
 
         ;; TODO: calculate gas
-        int value = ctx::value - 50_000_000;
+        int value = ctx::value - 50000000; ;; 0.05 TON
 
         slice sender = ctx::body~load_msg_addr();
         int index = ctx::body~load_uint(256);
@@ -87,7 +87,7 @@ global int distributor::claim_word; ;; claim word of the distributor
     route_internal(ctx::sender, ctx::value, ctx::fwd_fee, ctx::body);
 }
 
-(int, slice, int) get_data() method_id {
+(int, slice, int) get_distributor_data() method_id {
     distributor::load_data();
     return (
         distributor::prefix,
