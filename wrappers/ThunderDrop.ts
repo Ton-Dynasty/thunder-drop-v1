@@ -78,6 +78,8 @@ export const DropOpcodes = {
     TopUp: 0xd372158c,
     JettonTransfer: 0xf8a7ea5,
     Claim: 0xa769de27,
+    ClaimInternal: 0xca03fb47,
+    ClaimInternalReply: 0xd4a4cd9c,
     Withdraw: 0xb5de5f9e,
     Upgrade: 0xb766741a,
 };

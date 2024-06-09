@@ -204,6 +204,7 @@ describe('ThunderDrop', () => {
             mockJetton: jetton,
         });
         expect(deployResult.transactions).toHaveTransaction({
+            op: DropOpcodes.TopUp,
             from: deployer.address,
             to: thunderDrop.address,
             success: true,
