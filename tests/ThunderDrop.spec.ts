@@ -183,12 +183,7 @@ describe('ThunderDrop', () => {
     it('should deploy', async () => {
         // the check is done inside beforeEach
         // blockchain and thunderDrop are ready to use
-        // TODO
-        // TODO
-        // TODO: @ipromise2324 when generateMerkleData(2), it will fail with exit code 5
-        // TODO
-        // TODO
-        const { merkleData, totalAmount } = await generateMerkleData(3);
+        const { merkleData, totalAmount } = await generateMerkleData(2000);
         const tree = MerkleTree.fromMerkleData(merkleData);
         const recoveredTree = MerkleTree.fromNodes(tree.exportNodes());
         expect(recoveredTree.getRoot().toString('hex')).toEqual(tree.getRoot().toString('hex'));
