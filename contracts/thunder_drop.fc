@@ -2,7 +2,6 @@
 #include "./storages.fc";
 #include "./errors.fc";
 #include "./opcodes.fc";
-#include "./constants.fc";
 #include "./utils.fc";
 #include "./gas.fc";
 

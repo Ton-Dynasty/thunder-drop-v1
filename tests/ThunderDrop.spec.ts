@@ -297,10 +297,10 @@ describe('ThunderDrop', () => {
 
     it('Should claim jetton', async () => {
         const { merkleData, tree, jetton, thunderDrop } = await setupThunderDrop({ sampleSize: 10 });
-        const index = 0n;
-        const account = merkleData[0].account;
-        const amount = merkleData[0].amount;
-        const proof = tree.getProof(0n);
+        const index = 0;
+        const account = merkleData[index].account;
+        const amount = merkleData[index].amount;
+        const proof = tree.getProof(BigInt(index));
 
         // get thunder drop data before claim
         const thunderDropDataBefore = await thunderDrop.getThunderDropData();
@@ -319,7 +319,7 @@ describe('ThunderDrop', () => {
                 $$type: 'Claim',
                 queryId: 0n,
                 merkleProof: proof,
-                index: index,
+                index: BigInt(index),
                 account: account,
                 amount: amount,
             },
@@ -341,7 +341,7 @@ describe('ThunderDrop', () => {
         });
         printTxGasStats('User claim gas fee:', claimTx);
 
-        const distributorAddress = await thunderDrop.getDistributorAddress(index);
+        const distributorAddress = await thunderDrop.getDistributorAddress(BigInt(index));
         expect(claimResult.transactions).toHaveTransaction({
             op: 0xca03fb47, // claim internal
             from: thunderDrop.address,
