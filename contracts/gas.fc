@@ -1,10 +1,10 @@
 ;; Storage Duration
 const MIN_STORAGE_DURATION = 5 * 24 * 3600; ;; 4 days
-const THUNDER_DROP_BITS = 12702;
+const THUNDER_DROP_BITS = 12598;
 const THUNDER_DROP_CELLS = 42;
-const CLAIM_FEE = 18591;
+const CLAIM_FEE = 16021;
 const CLAIM_INTERNAL = 6348;
-const CLAIM_INTERNAL_REPLY = 10672;
+const CLAIM_INTERNAL_REPLY = 10592;
 const TOP_UP_FEE = 6261;
 
 const DISTRIBUTOR_BITS = 3472;
@@ -46,7 +46,7 @@ int get_jetton_transfer_fee() inline {
     forward_distributor_init_state_overhead();
     
     int total_fee = gas_comp + 
-    fwd_fee * 5 +
+    fwd_fee * 5 * 2 +
     get_compute_fee(MY_WORKCHAIN, claim_internal_gas_consumption) +
     get_jetton_transfer_fee();
 

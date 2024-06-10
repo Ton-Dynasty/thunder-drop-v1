@@ -28,7 +28,7 @@ global int distributor::claim_word; ;; claim word of the distributor
 
 (int) is_claimed(int index) inline {
     int claim_bit_index = index % 256;
-    int mask = (1 << claim_bit_index);
+    int mask = (1 << claim_bit_index) / 1;
     return (distributor::claim_word & mask) == mask;
 }
 

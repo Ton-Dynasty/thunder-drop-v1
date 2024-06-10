@@ -92,7 +92,7 @@
         throw_unless(error::permission_denied, equal_slices(ctx::sender, distributor_address));
 
         ;; if not success, then add amount back to total_amount, and refund ton to the one who call claim
-        if (~ success) |  (airdrop::total_amount < amount) {
+        if (~ success) {
             airdrop::total_amount += amount;
             airdrop::pending -= 1;
             transfer_ton(BOUNCEABLE, sender, ctx::value, begin_cell().store_op(0).store_slice("claim failed").end_cell(), SEND_MODE_REGULAR);
