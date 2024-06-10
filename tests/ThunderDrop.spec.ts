@@ -877,6 +877,14 @@ describe('ThunderDrop', () => {
         // get account jetton balance after first claim
         const accountBalanceBefore = await getJettonBalance(jetton, account);
 
+        
+        const distributorAddress = await thunderDrop.getDistributorAddress(index);
+        const distributor = blockchain.openContract(Distributor.createFromAddress(distributorAddress));
+        const isClaimed = await distributor.getContent(index);
+
+        // Expect that isClaimed is true
+        expect(isClaimed).toEqual(-1n);
+
         // claim jetton second time
         const claimSecondResult = await thunderDrop.sendClaim(
             deployer.getSender(),
@@ -902,7 +910,6 @@ describe('ThunderDrop', () => {
         });
 
         // Expecct that thunder drop send claim internal to distributor successfully
-        const distributorAddress = await thunderDrop.getDistributorAddress(index);
         expect(claimSecondResult.transactions).toHaveTransaction({
             op: DropOpcodes.ClaimInternal, // claim internal
             from: thunderDrop.address,
