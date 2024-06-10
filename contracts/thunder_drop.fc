@@ -45,7 +45,6 @@
         cell merkle_proof = ctx::body~load_dict();
         ctx::body.end_parse();
 
-        ;; TODO: check if gas is enough
         (int total_fee, int gas_consumption) = cal_claim_fee(ctx::fwd_fee);
         throw_unless(error::not_enough_gas, ctx::value >= total_fee);
         int value = ctx::value - gas_consumption;
@@ -85,9 +84,6 @@
         int amount = ctx::body~load_coins();
         int success = ctx::body~load_bool();
 
-        ;; TODO: gas processing
-        int ton_amount = ctx::value - get_compute_fee(MY_WORKCHAIN, CLAIM_INTERNAL_FEE);
-
         ;; get distributor state init and distributor address
         int prefix = index / 256;
         cell distributor_state_init = calculate_distributor_state_init(prefix, my_address(), airdrop::distributor_code);
@@ -100,14 +96,14 @@
         if (~ success) |  (airdrop::total_amount < amount) {
             airdrop::total_amount += amount;
             airdrop::pending -= 1;
-            transfer_ton(BOUNCEABLE, sender, ton_amount, begin_cell().store_op(0).store_slice("claim failed").end_cell(), SEND_MODE_REGULAR);
+            transfer_ton(BOUNCEABLE, sender, ctx::value, begin_cell().store_op(0).store_slice("claim failed").end_cell(), SEND_MODE_REGULAR);
             airdrop::save_data();
             return ();
         }
 
         ;; otherwise, success, then send jetton to account
         airdrop::pending -= 1;
-        transfer_jetton(BOUNCEABLE, account, airdrop::wallet_address, amount, ton_amount, query_id, null(), 0, SEND_MODE_REGULAR);
+        transfer_jetton(BOUNCEABLE, account, airdrop::wallet_address, amount, ctx::value, query_id, null(), 0, SEND_MODE_REGULAR);
         airdrop::save_data();
 
         return ();

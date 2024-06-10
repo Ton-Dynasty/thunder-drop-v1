@@ -23,6 +23,7 @@ import { buffer } from 'stream/consumers';
 import { Maybe } from '@ton/core/dist/utils/maybe';
 import { collectCellStats, computedGeneric } from './gasUtils';
 import { findTransactionRequired } from '@ton/test-utils';
+import { Distributor } from '../wrappers/Distributor';
 
 describe('ThunderDrop', () => {
     let thunderDropCode: Cell;
@@ -111,6 +112,15 @@ describe('ThunderDrop', () => {
                 queryId: 0n,
             },
         );
+
+        // // Calculate gas fee for claiming airdrop
+        // const topUpTx = findTransactionRequired(deployResult.transactions, {
+        //     op: DropOpcodes.TopUp,
+        //     from: deployer.address,
+        //     to: thunderDrop.address,
+        //     success: true,
+        // });
+        // printTxGasStats('Top Up gas fee:', topUpTx);
         // transfer jetton to thunderDrop
         return { thunderDrop, deployResult };
     };
@@ -292,9 +302,9 @@ describe('ThunderDrop', () => {
         const amount = merkleData[0].amount;
         const proof = tree.getProof(0n);
 
-        // get thunder drop data
-        const thunderDropData = await thunderDrop.getThunderDropData();
-        expect(thunderDropData.isInitialized).toEqual(true);
+        // get thunder drop data before claim
+        const thunderDropDataBefore = await thunderDrop.getThunderDropData();
+        expect(thunderDropDataBefore.isInitialized).toEqual(true);
 
         // get account jetton balance before claim
         const accountBalanceBefore = await getJettonBalance(jetton, account);
@@ -368,6 +378,12 @@ describe('ThunderDrop', () => {
         // get account jetton balance after claim
         const accountBalanceAfter = await getJettonBalance(jetton, account);
         expect(accountBalanceAfter).toEqual(accountBalanceBefore + amount);
+
+        // get thunder drop data after claim
+        const thunderDropDataAfter = await thunderDrop.getThunderDropData();
+
+        // total amount should be decreased
+        expect(thunderDropDataAfter.totalAmount).toEqual(thunderDropDataBefore.totalAmount - amount);
 
         // Calculate Distributor contract gas fee
         const smc2 = await blockchain.getContract(distributorAddress);
@@ -454,6 +470,39 @@ describe('ThunderDrop', () => {
         const balanceAfter = await getJettonBalance(jetton, deployer.address);
         expect(balanceAfter).toBeGreaterThan(balanceBefore);
         expect(balanceAfter).toEqual(totalAmount);
+    });
+
+    it('Should only admin can withdraw', async () => {
+        const { jetton, thunderDrop } = await setupThunderDrop({ sampleSize: 10 });
+
+        const balanceBefore = await getJettonBalance(jetton, deployer.address);
+
+        // set the end time
+        const { endTime, expectedAmount, totalAmount } = await thunderDrop.getThunderDropData();
+        blockchain.now = Number(endTime) + 1;
+
+        // check the total amount is equal to the expected amount
+        expect(expectedAmount).toEqual(totalAmount);
+
+        // After the end time, the thunderDrop can be withdrawn
+        let bob = await blockchain.treasury('bob');
+        const result = await thunderDrop.sendWithdraw(
+            bob.getSender(),
+            { value: toNano('0.5') },
+            {
+                $$type: 'Withdraw',
+                queryId: 0n,
+            },
+        );
+
+        // Expect to throw permission_denied error
+        expect(result.transactions).toHaveTransaction({
+            op: DropOpcodes.Withdraw,
+            from: bob.address,
+            to: thunderDrop.address,
+            success: false,
+            exitCode: DropExitCodes.PermissionDenied,
+        });
     });
 
     it('Should fail to claim if the thunderDrop is not initialized', async () => {
@@ -590,6 +639,350 @@ describe('ThunderDrop', () => {
             to: thunderDrop.address,
             success: false,
             exitCode: DropExitCodes.Finished,
+        });
+    });
+
+    it('Should fail to claim if claim amount > total amount', async () => {
+        const { merkleData, tree, jetton, thunderDrop } = await setupThunderDrop({ sampleSize: 10 });
+        // User try to claim
+        const index = 0n;
+        const account = merkleData[0].account;
+        const amount = merkleData[0].amount;
+        const proof = tree.getProof(0n);
+        const claimResult = await thunderDrop.sendClaim(
+            deployer.getSender(),
+            {
+                value: toNano('0.5'),
+            },
+            {
+                $$type: 'Claim',
+                queryId: 0n,
+                merkleProof: proof,
+                index: index,
+                account: account,
+                amount: amount * 100n,
+            },
+        );
+
+        // Expect to thrwo not_initialized error (506)
+        expect(claimResult.transactions).toHaveTransaction({
+            op: DropOpcodes.Claim,
+            from: deployer.address,
+            to: thunderDrop.address,
+            success: false,
+            exitCode: DropExitCodes.PermissionDenied,
+        });
+    });
+    it('Should fail to claim if sending ton is not enough', async () => {
+        const { merkleData, tree, jetton, thunderDrop } = await setupThunderDrop({ sampleSize: 10 });
+        // User try to claim
+        const index = 0n;
+        const account = merkleData[0].account;
+        const amount = merkleData[0].amount;
+        const proof = tree.getProof(0n);
+        const claimResult = await thunderDrop.sendClaim(
+            deployer.getSender(),
+            {
+                value: toNano('0.03'),
+            },
+            {
+                $$type: 'Claim',
+                queryId: 0n,
+                merkleProof: proof,
+                index: index,
+                account: account,
+                amount: amount,
+            },
+        );
+
+        // Expect to thrwo not_initialized error (506)
+        expect(claimResult.transactions).toHaveTransaction({
+            op: DropOpcodes.Claim,
+            from: deployer.address,
+            to: thunderDrop.address,
+            success: false,
+            exitCode: DropExitCodes.NotEnoughGas,
+        });
+    });
+
+    it('Should fail to claim if user provide wrong account', async () => {
+        const { merkleData, tree, jetton, thunderDrop } = await setupThunderDrop({ sampleSize: 10 });
+        // User try to claim
+        const index = 0n;
+        const account = merkleData[1].account; // wrong account, it should be 0n
+        const amount = merkleData[0].amount;
+        const proof = tree.getProof(1n);
+        const claimResult = await thunderDrop.sendClaim(
+            deployer.getSender(),
+            {
+                value: toNano('0.5'),
+            },
+            {
+                $$type: 'Claim',
+                queryId: 0n,
+                merkleProof: proof,
+                index: index,
+                account: account,
+                amount: amount,
+            },
+        );
+
+        // Expect to thrwo not_initialized error (506)
+        expect(claimResult.transactions).toHaveTransaction({
+            op: DropOpcodes.Claim,
+            from: deployer.address,
+            to: thunderDrop.address,
+            success: false,
+            exitCode: DropExitCodes.InvalidProof,
+        });
+    });
+
+    it('Should fail to claim if user provide wrong amount', async () => {
+        const { merkleData, tree, jetton, thunderDrop } = await setupThunderDrop({ sampleSize: 10 });
+        // User try to claim
+        const index = 0n;
+        const account = merkleData[0].account;
+        const amount = merkleData[0].amount * 2n; // wrong amount
+        const proof = tree.getProof(1n);
+        const claimResult = await thunderDrop.sendClaim(
+            deployer.getSender(),
+            {
+                value: toNano('0.5'),
+            },
+            {
+                $$type: 'Claim',
+                queryId: 0n,
+                merkleProof: proof,
+                index: index,
+                account: account,
+                amount: amount,
+            },
+        );
+
+        // Expect to thrwo not_initialized error (506)
+        expect(claimResult.transactions).toHaveTransaction({
+            op: DropOpcodes.Claim,
+            from: deployer.address,
+            to: thunderDrop.address,
+            success: false,
+            exitCode: DropExitCodes.InvalidProof,
+        });
+    });
+
+    it('Should fail to claim if user provide wrong proof', async () => {
+        const { merkleData, tree, jetton, thunderDrop } = await setupThunderDrop({ sampleSize: 10 });
+        // User try to claim
+        const index = 0n;
+        const account = merkleData[0].account;
+        const amount = merkleData[0].amount;
+        const proof = tree.getProof(1n); // wrong proof, it should be 0n
+        const claimResult = await thunderDrop.sendClaim(
+            deployer.getSender(),
+            {
+                value: toNano('0.5'),
+            },
+            {
+                $$type: 'Claim',
+                queryId: 0n,
+                merkleProof: proof,
+                index: index,
+                account: account,
+                amount: amount,
+            },
+        );
+
+        // Expect to thrwo not_initialized error (506)
+        expect(claimResult.transactions).toHaveTransaction({
+            op: DropOpcodes.Claim,
+            from: deployer.address,
+            to: thunderDrop.address,
+            success: false,
+            exitCode: DropExitCodes.InvalidProof,
+        });
+    });
+
+    it('Should only thunder drop can call distributor', async () => {
+        const { merkleData, tree, jetton, thunderDrop } = await setupThunderDrop({ sampleSize: 10 });
+        const index = 0n;
+        const account = merkleData[0].account;
+        const amount = merkleData[0].amount;
+        const proof = tree.getProof(0n);
+
+        // get thunder drop data
+        const thunderDropData = await thunderDrop.getThunderDropData();
+        expect(thunderDropData.isInitialized).toEqual(true);
+
+        // claim jetton in order to deploy distributor
+        await thunderDrop.sendClaim(
+            deployer.getSender(),
+            {
+                value: toNano('0.5'),
+            },
+            {
+                $$type: 'Claim',
+                queryId: 0n,
+                merkleProof: proof,
+                index: index,
+                account: account,
+                amount: amount,
+            },
+        );
+        const distributorAddress = await thunderDrop.getDistributorAddress(index);
+        let distributor = blockchain.openContract(Distributor.createFromAddress(distributorAddress));
+
+        // other people try to send claim internal to distributor
+        const claimInternalResult = await deployer.send({
+            value: toNano('0.5'),
+            to: distributorAddress,
+            body: beginCell().storeUint(0xca03fb47, 32).storeUint(0, 64).endCell(),
+        });
+
+        // throw permission_denied error (500), only thunderDrop can call distributor
+        expect(claimInternalResult.transactions).toHaveTransaction({
+            op: 0xca03fb47, // claim internal
+            from: deployer.address,
+            to: distributorAddress,
+            success: false,
+            exitCode: DropExitCodes.PermissionDenied,
+        });
+    });
+
+    it('Should user can only claim once', async () => {
+        const { merkleData, tree, jetton, thunderDrop } = await setupThunderDrop({ sampleSize: 10 });
+        const index = 0n;
+        const account = merkleData[0].account;
+        const amount = merkleData[0].amount;
+        const proof = tree.getProof(0n);
+
+        // get thunder drop data
+        const thunderDropData = await thunderDrop.getThunderDropData();
+        expect(thunderDropData.isInitialized).toEqual(true);
+
+        // claim jetton first time
+        const claimResult = await thunderDrop.sendClaim(
+            deployer.getSender(),
+            {
+                value: toNano('0.5'),
+            },
+            {
+                $$type: 'Claim',
+                queryId: 0n,
+                merkleProof: proof,
+                index: index,
+                account: account,
+                amount: amount,
+            },
+        );
+
+        // get account jetton balance after first claim
+        const accountBalanceBefore = await getJettonBalance(jetton, account);
+
+        // claim jetton second time
+        const claimSecondResult = await thunderDrop.sendClaim(
+            deployer.getSender(),
+            {
+                value: toNano('0.5'),
+            },
+            {
+                $$type: 'Claim',
+                queryId: 0n,
+                merkleProof: proof,
+                index: index,
+                account: account,
+                amount: amount,
+            },
+        );
+
+        // Expect that deployer send claim to thunderDrop successfully
+        expect(claimSecondResult.transactions).toHaveTransaction({
+            op: DropOpcodes.Claim,
+            from: deployer.address,
+            to: thunderDrop.address,
+            success: true,
+        });
+
+        // Expecct that thunder drop send claim internal to distributor successfully
+        const distributorAddress = await thunderDrop.getDistributorAddress(index);
+        expect(claimSecondResult.transactions).toHaveTransaction({
+            op: DropOpcodes.ClaimInternal, // claim internal
+            from: thunderDrop.address,
+            to: distributorAddress,
+            success: true,
+        });
+
+        // Expect distributor send claim internal reply to thunderDrop successfully
+        expect(claimSecondResult.transactions).toHaveTransaction({
+            op: DropOpcodes.ClaimInternalReply, // claim internal reply
+            from: distributorAddress,
+            to: thunderDrop.address,
+            success: true,
+        });
+
+        // Expect that thunder drop send ton back to caller successfully
+        expect(claimSecondResult.transactions).toHaveTransaction({
+            op: 0x0, // send ton back to caller
+            from: thunderDrop.address,
+            to: deployer.address,
+            success: true,
+        });
+
+        // uesr accont balance should not change
+        const accountBalanceAfter = await getJettonBalance(jetton, account);
+        expect(accountBalanceAfter).toEqual(accountBalanceBefore);
+    });
+
+    it('Should only distributor can call thunder drop', async () => {
+        const { merkleData, tree, jetton, thunderDrop } = await setupThunderDrop({ sampleSize: 10 });
+        const index = 0n;
+        const account = merkleData[0].account;
+        const amount = merkleData[0].amount;
+        const proof = tree.getProof(0n);
+
+        // get thunder drop data before claim
+        const thunderDropDataBefore = await thunderDrop.getThunderDropData();
+        expect(thunderDropDataBefore.isInitialized).toEqual(true);
+
+        // get account jetton balance before claim
+        const accountBalanceBefore = await getJettonBalance(jetton, account);
+
+        // claim jetton
+        const claimResult = await thunderDrop.sendClaim(
+            deployer.getSender(),
+            {
+                value: toNano('0.5'),
+            },
+            {
+                $$type: 'Claim',
+                queryId: 0n,
+                merkleProof: proof,
+                index: index,
+                account: account,
+                amount: amount,
+            },
+        );
+
+        // other people try to send claim internal to distributor
+        const claimInternalResult = await deployer.send({
+            value: toNano('0.5'),
+            to: thunderDrop.address,
+            body: beginCell()
+                .storeUint(0xd4a4cd9c, 32)
+                .storeUint(0, 64)
+                .storeAddress(deployer.address)
+                .storeUint(0, 256)
+                .storeAddress(deployer.address)
+                .storeCoins(toNano('0.5'))
+                .storeInt(-1, 2)
+                .endCell(),
+        });
+
+        // Expect to throw permission_denied error (500), only distributor can call thunderDrop
+        expect(claimInternalResult.transactions).toHaveTransaction({
+            op: 0xd4a4cd9c, // claim internal reply
+            from: deployer.address,
+            to: thunderDrop.address,
+            success: false,
+            exitCode: DropExitCodes.PermissionDenied,
         });
     });
 });

@@ -3,6 +3,7 @@
 #include "./opcodes.fc";
 #include "./constants.fc";
 #include "./utils.fc";
+#include "./gas.fc";
 
 global int distributor::prefix; ;; prefix of the distributor, for example, if index is 277, then it will allocate to 277/256 = 1th distributor
 global slice distributor::thunder_drop; ;; address of thunder drop contract
@@ -44,8 +45,8 @@ global int distributor::claim_word; ;; claim word of the distributor
         ;; check ctx::sender is thunder drop contract
         throw_unless(error::permission_denied, equal_slices(ctx::sender, distributor::thunder_drop));
 
-        ;; TODO: calculate gas
-        int value = ctx::value - 20000000; ;; 0.02 TON
+        ;; subtract fee
+        int value = ctx::value - cal_claim_internal_fee(); ;; We don't need to check value, because it is already checked in the thunder drop contract
 
         slice sender = ctx::body~load_msg_addr();
         int index = ctx::body~load_uint(256);

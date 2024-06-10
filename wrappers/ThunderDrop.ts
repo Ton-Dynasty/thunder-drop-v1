@@ -97,6 +97,7 @@ export const DropExitCodes = {
     IsInitialized: 507,
     PendingClaim: 508,
     NotFinished: 509,
+    NotEnoughGas: 510,
 };
 
 export const DropError = (exitCode: number) => {
