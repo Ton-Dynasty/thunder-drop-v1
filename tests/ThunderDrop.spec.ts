@@ -13,6 +13,7 @@ import {
     MerkleTree,
     DropOpcodes,
     DropExitCodes,
+    createWhiteList,
 } from '../wrappers/ThunderDrop';
 import '@ton/test-utils';
 import { compile } from '@ton/blueprint';
@@ -24,6 +25,7 @@ import { Maybe } from '@ton/core/dist/utils/maybe';
 import { collectCellStats, computedGeneric } from './gasUtils';
 import { findTransactionRequired } from '@ton/test-utils';
 import { Distributor } from '../wrappers/Distributor';
+import whitelist from '../scripts/sample/whitelist.json';
 
 describe('ThunderDrop', () => {
     let thunderDropCode: Cell;
@@ -125,20 +127,9 @@ describe('ThunderDrop', () => {
         return { thunderDrop, deployResult };
     };
 
-    const generateMerkleData = async (samepleSize: number, decimalBase: number = 9) => {
-        const numbers = Array.from({ length: samepleSize }, (_, i) => i);
-        const merkleData: MerkleData[] = [];
-        let totalAmount = 0n;
-        for (const i of numbers) {
-            const amount = toDeciamal(i + 1, decimalBase);
-            const account = (await blockchain.treasury(`address${i}`, { balance: toNano('10000') })).address;
-            totalAmount += amount;
-            merkleData.push({
-                index: BigInt(i),
-                account,
-                amount: amount,
-            });
-        }
+    const generateMerkleData = async () => {
+        const merkleData = createWhiteList(whitelist);
+        const totalAmount = merkleData.reduce((acc, item) => acc + item.amount, 0n);
         return {
             merkleData,
             totalAmount,
@@ -176,7 +167,7 @@ describe('ThunderDrop', () => {
     };
 
     const setupThunderDrop = async (args: { sampleSize: number }) => {
-        const { merkleData, totalAmount } = await generateMerkleData(args.sampleSize);
+        const { merkleData, totalAmount } = await generateMerkleData();
         const tree = MerkleTree.fromMerkleData(merkleData);
         const { jetton } = await deployMockJetton(deployer);
         await mintJetton(deployer, jetton, deployer.address, totalAmount);
@@ -210,7 +201,7 @@ describe('ThunderDrop', () => {
     it('should deploy', async () => {
         // the check is done inside beforeEach
         // blockchain and thunderDrop are ready to use
-        const { merkleData, totalAmount } = await generateMerkleData(2000);
+        const { merkleData, totalAmount } = await generateMerkleData();
         const tree = MerkleTree.fromMerkleData(merkleData);
         const recoveredTree = MerkleTree.fromNodes(tree.exportNodes());
         expect(recoveredTree.getRoot().toString('hex')).toEqual(tree.getRoot().toString('hex'));
@@ -506,7 +497,7 @@ describe('ThunderDrop', () => {
     });
 
     it('Should fail to claim if the thunderDrop is not initialized', async () => {
-        const { merkleData, totalAmount } = await generateMerkleData(10);
+        const { merkleData, totalAmount } = await generateMerkleData();
         const tree = MerkleTree.fromMerkleData(merkleData);
         const { jetton } = await deployMockJetton(deployer);
         await mintJetton(deployer, jetton, deployer.address, totalAmount);
@@ -549,7 +540,7 @@ describe('ThunderDrop', () => {
     });
 
     it('Should fail to claim if now < start time', async () => {
-        const { merkleData, totalAmount } = await generateMerkleData(10);
+        const { merkleData, totalAmount } = await generateMerkleData();
         const tree = MerkleTree.fromMerkleData(merkleData);
         const { jetton } = await deployMockJetton(deployer);
         await mintJetton(deployer, jetton, deployer.address, totalAmount);
@@ -596,7 +587,7 @@ describe('ThunderDrop', () => {
     });
 
     it('Should fail to claim if now > end time', async () => {
-        const { merkleData, totalAmount } = await generateMerkleData(10);
+        const { merkleData, totalAmount } = await generateMerkleData();
         const tree = MerkleTree.fromMerkleData(merkleData);
         const { jetton } = await deployMockJetton(deployer);
         await mintJetton(deployer, jetton, deployer.address, totalAmount);
@@ -877,7 +868,6 @@ describe('ThunderDrop', () => {
         // get account jetton balance after first claim
         const accountBalanceBefore = await getJettonBalance(jetton, account);
 
-        
         const distributorAddress = await thunderDrop.getDistributorAddress(index);
         const distributor = blockchain.openContract(Distributor.createFromAddress(distributorAddress));
         const isClaimed = await distributor.getContent(index);
