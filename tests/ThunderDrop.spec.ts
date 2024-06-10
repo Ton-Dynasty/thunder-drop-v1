@@ -201,8 +201,8 @@ describe('ThunderDrop', () => {
         deployer = await blockchain.treasury('deployer');
         printTxGasStats = (name, transaction) => {
             const txComputed = computedGeneric(transaction);
-            console.log(`${name} used ${txComputed.gasUsed} gas`);
-            console.log(`${name} gas cost: ${txComputed.gasFees}`);
+            // console.log(`${name} used ${txComputed.gasUsed} gas`);
+            // console.log(`${name} gas cost: ${txComputed.gasFees}`);
             return txComputed.gasFees;
         };
     });
@@ -283,16 +283,16 @@ describe('ThunderDrop', () => {
         const isValidProof = tree.verifyProof(merkleData[0], proof);
         expect(isValidProof).toEqual(true);
 
-        // Calculate Jetton Master Bond contract gas fee
-        const smc = await blockchain.getContract(thunderDrop.address);
-        if (smc.accountState === undefined) throw new Error("Can't access wallet account state");
-        if (smc.accountState.type !== 'active') throw new Error('Wallet account is not active');
-        if (smc.account.account === undefined || smc.account.account === null)
-            throw new Error("Can't access wallet account!");
-        console.log('Thunder Drop max storage stats:', smc.account.account.storageStats.used);
-        const state = smc.accountState.state;
-        const stateCell = beginCell().store(storeStateInit(state)).endCell();
-        console.log('State init stats:', collectCellStats(stateCell, []));
+        // // Calculate Jetton Master Bond contract gas fee
+        // const smc = await blockchain.getContract(thunderDrop.address);
+        // if (smc.accountState === undefined) throw new Error("Can't access wallet account state");
+        // if (smc.accountState.type !== 'active') throw new Error('Wallet account is not active');
+        // if (smc.account.account === undefined || smc.account.account === null)
+        //     throw new Error("Can't access wallet account!");
+        // console.log('Thunder Drop max storage stats:', smc.account.account.storageStats.used);
+        // const state = smc.accountState.state;
+        // const stateCell = beginCell().store(storeStateInit(state)).endCell();
+        // console.log('State init stats:', collectCellStats(stateCell, []));
     });
 
     it('Should claim jetton', async () => {
@@ -385,16 +385,16 @@ describe('ThunderDrop', () => {
         // total amount should be decreased
         expect(thunderDropDataAfter.totalAmount).toEqual(thunderDropDataBefore.totalAmount - amount);
 
-        // Calculate Distributor contract gas fee
-        const smc2 = await blockchain.getContract(distributorAddress);
-        if (smc2.accountState === undefined) throw new Error("Can't access wallet account state");
-        if (smc2.accountState.type !== 'active') throw new Error('Wallet account is not active');
-        if (smc2.account.account === undefined || smc2.account.account === null)
-            throw new Error("Can't access wallet account!");
-        console.log('Distributor max storage stats:', smc2.account.account.storageStats.used);
-        const state2 = smc2.accountState.state;
-        const stateCell2 = beginCell().store(storeStateInit(state2)).endCell();
-        console.log('State init stats:', collectCellStats(stateCell2, []));
+        // // Calculate Distributor contract gas fee
+        // const smc2 = await blockchain.getContract(distributorAddress);
+        // if (smc2.accountState === undefined) throw new Error("Can't access wallet account state");
+        // if (smc2.accountState.type !== 'active') throw new Error('Wallet account is not active');
+        // if (smc2.account.account === undefined || smc2.account.account === null)
+        //     throw new Error("Can't access wallet account!");
+        // console.log('Distributor max storage stats:', smc2.account.account.storageStats.used);
+        // const state2 = smc2.accountState.state;
+        // const stateCell2 = beginCell().store(storeStateInit(state2)).endCell();
+        // console.log('State init stats:', collectCellStats(stateCell2, []));
     });
 
     it("Should fail to withdraw if it's not the end time", async () => {
