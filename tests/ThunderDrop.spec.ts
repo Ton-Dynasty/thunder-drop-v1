@@ -982,4 +982,111 @@ describe('ThunderDrop', () => {
             exitCode: DropExitCodes.PermissionDenied,
         });
     });
+
+    it('Should everyone claims jetton', async () => {
+        const { merkleData, tree, jetton, thunderDrop } = await setupThunderDrop({ sampleSize: 10 });
+        for (let i = 0; i < merkleData.length; i++) {
+            let index = i;
+            const account = merkleData[index].account;
+            const amount = merkleData[index].amount;
+            if (amount === 0n) {
+                continue;
+            }
+            let bitIn = BigInt(index);
+            const proof = tree.getProof(bitIn);
+
+            // get thunder drop data before claim
+            const thunderDropDataBefore = await thunderDrop.getThunderDropData();
+            expect(thunderDropDataBefore.isInitialized).toEqual(true);
+
+            // get account jetton balance before claim
+            const accountBalanceBefore = await getJettonBalance(jetton, account);
+
+            // claim jetton
+            const claimResult = await thunderDrop.sendClaim(
+                deployer.getSender(),
+                {
+                    value: toNano('0.5'),
+                },
+                {
+                    $$type: 'Claim',
+                    queryId: 0n,
+                    merkleProof: proof,
+                    index: BigInt(index),
+                    account: account,
+                    amount: amount,
+                },
+            );
+
+            expect(claimResult.transactions).toHaveTransaction({
+                op: DropOpcodes.Claim,
+                from: deployer.address,
+                to: thunderDrop.address,
+                success: true,
+            });
+
+            // Calculate gas fee for claiming airdrop
+            const claimTx = findTransactionRequired(claimResult.transactions, {
+                op: DropOpcodes.Claim,
+                from: deployer.address,
+                to: thunderDrop.address,
+                success: true,
+            });
+            printTxGasStats('User claim gas fee:', claimTx);
+
+            let distributorAddress = await thunderDrop.getDistributorAddress(BigInt(index));
+            expect(claimResult.transactions).toHaveTransaction({
+                op: DropOpcodes.ClaimInternal, // claim internal
+                from: thunderDrop.address,
+                to: distributorAddress,
+                success: true,
+            });
+
+            // Calculate gas fee for claim internal
+            const claimInternalTx = findTransactionRequired(claimResult.transactions, {
+                op: 0xca03fb47, // claim internal
+                from: thunderDrop.address,
+                to: distributorAddress,
+                success: true,
+            });
+            printTxGasStats('User claim internal gas fee:', claimInternalTx);
+
+            expect(claimResult.transactions).toHaveTransaction({
+                op: 0xd4a4cd9c, // claim internal reply
+                from: distributorAddress,
+                to: thunderDrop.address,
+                success: true,
+            });
+
+            // Calculate gas fee for claim internal reply
+            const claimInternaReplylTx = findTransactionRequired(claimResult.transactions, {
+                op: 0xd4a4cd9c, // claim internal reply
+                from: distributorAddress,
+                to: thunderDrop.address,
+                success: true,
+            });
+            printTxGasStats('User claim internal reply gas fee:', claimInternaReplylTx);
+
+            // // get account jetton balance after claim
+            // const accountBalanceAfter = await getJettonBalance(jetton, account);
+            // expect(accountBalanceAfter).toEqual(accountBalanceBefore + amount);
+
+            // // get thunder drop data after claim
+            // const thunderDropDataAfter = await thunderDrop.getThunderDropData();
+
+            // // total amount should be decreased
+            // expect(thunderDropDataAfter.totalAmount).toEqual(thunderDropDataBefore.totalAmount - amount);
+
+            // // Calculate Distributor contract gas fee
+            // const smc2 = await blockchain.getContract(distributorAddress);
+            // if (smc2.accountState === undefined) throw new Error("Can't access wallet account state");
+            // if (smc2.accountState.type !== 'active') throw new Error('Wallet account is not active');
+            // if (smc2.account.account === undefined || smc2.account.account === null)
+            //     throw new Error("Can't access wallet account!");
+            // console.log('Distributor max storage stats:', smc2.account.account.storageStats.used);
+            // const state2 = smc2.accountState.state;
+            // const stateCell2 = beginCell().store(storeStateInit(state2)).endCell();
+            // console.log('State init stats:', collectCellStats(stateCell2, []));
+        }
+    });
 });

@@ -377,9 +377,21 @@ export interface MerkleData {
     account: Address;
     amount: bigint;
 }
+function padToPowerOfTwo(data: { account: string; amount: string }[]): { account: string; amount: string }[] {
+    const length = data.length;
+    const nextPowerOfTwo = Math.pow(2, Math.ceil(Math.log2(length)));
+    const paddingCount = nextPowerOfTwo - length;
 
+    const paddedData = [...data];
+    for (let i = 0; i < paddingCount; i++) {
+        paddedData.push({ account: 'UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ', amount: '0' });
+    }
+
+    return paddedData;
+}
 export function createWhiteList(data: { account: string; amount: string }[]): MerkleData[] {
-    return data.map((item, index) => ({
+    const paddedData = padToPowerOfTwo(data);
+    return paddedData.map((item, index) => ({
         index: BigInt(index),
         account: Address.parse(item.account),
         amount: BigInt(item.amount),
@@ -387,6 +399,9 @@ export function createWhiteList(data: { account: string; amount: string }[]): Me
 }
 
 export function bufferToBigInt(buffer: Buffer): bigint {
+    if (buffer.length === 0) {
+        throw new Error('Buffer is empty, cannot convert to BigInt');
+    }
     return BigInt(`0x${buffer.toString('hex')}`);
 }
 export class MerkleTree {
