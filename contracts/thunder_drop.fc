@@ -134,8 +134,8 @@
         throw_unless(error::permission_denied, equal_slices(ctx::sender, airdrop::admin_address));
         throw_unless(error::pending_claim, airdrop::pending == 0);
         throw_unless(error::not_finished, now() > airdrop::end_time);
-        airdrop::total_amount = 0;
         transfer_jetton(BOUNCEABLE, airdrop::admin_address, airdrop::wallet_address, airdrop::total_amount, 0, query_id, null(), 0, SEND_MODE_CARRY_ALL_BALANCE);
+        airdrop::total_amount = 0;
         airdrop::save_data();
         return();
     }

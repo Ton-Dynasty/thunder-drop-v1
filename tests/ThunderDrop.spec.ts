@@ -189,8 +189,8 @@ describe('ThunderDrop', () => {
         deployer = await blockchain.treasury('deployer');
         printTxGasStats = (name, transaction) => {
             const txComputed = computedGeneric(transaction);
-            console.log(`${name} used ${txComputed.gasUsed} gas`);
-            console.log(`${name} gas cost: ${txComputed.gasFees}`);
+            // console.log(`${name} used ${txComputed.gasUsed} gas`);
+            // console.log(`${name} gas cost: ${txComputed.gasFees}`);
             return txComputed.gasFees;
         };
     });
@@ -358,7 +358,6 @@ describe('ThunderDrop', () => {
     it("Should withdraw if it's the end time", async () => {
         const { jetton, thunderDrop } = await setupThunderDrop({ sampleSize: 10 });
 
-        // TODO: @ipromise2324 here is the problem!!
         const balanceBefore = await getJettonBalance(jetton, deployer.address);
 
         // set the end time
@@ -390,13 +389,26 @@ describe('ThunderDrop', () => {
             to: walletAddress!,
             success: true,
         });
+
+        // Airdrop jetton wallet should send jetton internal transfer to admin jetton wallet
+        const adminJettonWalletAddress = await jetton.getWalletAddress(deployer.address);
         expect(result.transactions).toHaveTransaction({
-            op: 0x178d4519, // jetton transfer
+            op: 0x178d4519, // jetton internal transfer
             from: walletAddress!,
+            to: adminJettonWalletAddress,
+            success: true,
+        });
+
+        // Admin jetton wallet should send excess to admin
+        expect(result.transactions).toHaveTransaction({
+            op: 0xd53276db, // excess
+            from: adminJettonWalletAddress,
+            to: deployer.address,
             success: true,
         });
         const balanceAfter = await getJettonBalance(jetton, deployer.address);
         expect(balanceAfter).toBeGreaterThan(balanceBefore);
+        expect(balanceAfter).toEqual(totalAmount);
     });
 
     it('Should fail to claim if the thunderDrop is not initialized', async () => {
