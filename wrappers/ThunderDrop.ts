@@ -378,6 +378,14 @@ export interface MerkleData {
     amount: bigint;
 }
 
+export function createWhiteList(data: { account: string; amount: string }[]): MerkleData[] {
+    return data.map((item, index) => ({
+        index: BigInt(index),
+        account: Address.parse(item.account),
+        amount: BigInt(item.amount),
+    }));
+}
+
 export function bufferToBigInt(buffer: Buffer): bigint {
     return BigInt(`0x${buffer.toString('hex')}`);
 }
