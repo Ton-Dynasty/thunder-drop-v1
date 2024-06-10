@@ -1,5 +1,11 @@
-import { Blockchain, SandboxContract, TreasuryContract, prettyLogTransactions } from '@ton/sandbox';
-import { Address, Cell, beginCell, toNano } from '@ton/core';
+import {
+    Blockchain,
+    SandboxContract,
+    TreasuryContract,
+    prettyLogTransactions,
+    printTransactionFees,
+} from '@ton/sandbox';
+import { Address, Cell, Transaction, beginCell, toNano } from '@ton/core';
 import {
     MerkleData,
     ThunderDrop,
@@ -15,6 +21,8 @@ import { JettonContent, buildJettonContent } from '../utils/jetton';
 import { JettonWallet } from '../wrappers/JettonWallet';
 import { buffer } from 'stream/consumers';
 import { Maybe } from '@ton/core/dist/utils/maybe';
+import { collectCellStats, computedGeneric } from './gasUtils';
+import { findTransactionRequired } from '@ton/test-utils';
 
 describe('ThunderDrop', () => {
     let thunderDropCode: Cell;
@@ -24,6 +32,7 @@ describe('ThunderDrop', () => {
 
     let blockchain: Blockchain;
     let deployer: SandboxContract<TreasuryContract>;
+    let printTxGasStats: (name: string, trans: Transaction) => bigint;
 
     beforeAll(async () => {
         thunderDropCode = await compile('ThunderDrop');
@@ -178,6 +187,12 @@ describe('ThunderDrop', () => {
     beforeEach(async () => {
         blockchain = await Blockchain.create();
         deployer = await blockchain.treasury('deployer');
+        printTxGasStats = (name, transaction) => {
+            const txComputed = computedGeneric(transaction);
+            console.log(`${name} used ${txComputed.gasUsed} gas`);
+            console.log(`${name} gas cost: ${txComputed.gasFees}`);
+            return txComputed.gasFees;
+        };
     });
 
     it('should deploy', async () => {
@@ -286,12 +301,21 @@ describe('ThunderDrop', () => {
                 amount: amount,
             },
         );
+
         expect(claimResult.transactions).toHaveTransaction({
             op: DropOpcodes.Claim,
             from: deployer.address,
             to: thunderDrop.address,
             success: true,
         });
+        // Calculate gas fee for claiming airdrop
+        const claimTx = findTransactionRequired(claimResult.transactions, {
+            op: DropOpcodes.Claim,
+            from: deployer.address,
+            to: thunderDrop.address,
+            success: true,
+        });
+        printTxGasStats('User claim gas fee:', claimTx);
         const distributorAddress = await thunderDrop.getDistributorAddress(index);
         expect(claimResult.transactions).toHaveTransaction({
             op: 0xca03fb47, // claim internal
@@ -373,5 +397,48 @@ describe('ThunderDrop', () => {
         });
         const balanceAfter = await getJettonBalance(jetton, deployer.address);
         expect(balanceAfter).toBeGreaterThan(balanceBefore);
+    });
+
+    it('Should fail to claim if the thunderDrop is not initialized', async () => {
+        const { merkleData, totalAmount } = await generateMerkleData(10);
+        const tree = MerkleTree.fromMerkleData(merkleData);
+        const { jetton } = await deployMockJetton(deployer);
+        await mintJetton(deployer, jetton, deployer.address, totalAmount);
+        const { thunderDrop } = await deployThunderDrop(deployer, {
+            merkleRoot: bufferToBigInt(tree.getRoot()),
+            expectedAmount: totalAmount * 100n,
+            mockJetton: jetton,
+        });
+        // Only transfer totalAmount to thunderDrop, but it need totalAmount * 100
+        await transferJetton(jetton, deployer, thunderDrop.address, totalAmount, deployer.address, toNano('1'), null);
+
+        // User try to claim
+        const index = 0n;
+        const account = merkleData[0].account;
+        const amount = merkleData[0].amount;
+        const proof = tree.getProof(0n);
+        const claimResult = await thunderDrop.sendClaim(
+            deployer.getSender(),
+            {
+                value: toNano('0.5'),
+            },
+            {
+                $$type: 'Claim',
+                queryId: 0n,
+                merkleProof: proof,
+                index: index,
+                account: account,
+                amount: amount,
+            },
+        );
+
+        // Expect to thrwo not_initialized error (506)
+        expect(claimResult.transactions).toHaveTransaction({
+            op: DropOpcodes.Claim,
+            from: deployer.address,
+            to: thunderDrop.address,
+            success: false,
+            exitCode: DropExitCodes.NotInitialized,
+        });
     });
 });
