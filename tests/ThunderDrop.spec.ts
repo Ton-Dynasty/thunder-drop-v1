@@ -5,7 +5,7 @@ import {
     prettyLogTransactions,
     printTransactionFees,
 } from '@ton/sandbox';
-import { Address, Cell, Transaction, beginCell, toNano } from '@ton/core';
+import { Address, Cell, Transaction, beginCell, storeStateInit, toNano } from '@ton/core';
 import {
     MerkleData,
     ThunderDrop,
@@ -83,7 +83,7 @@ describe('ThunderDrop', () => {
     ) => {
         let actualStartTime = args.startTime || BigInt(Math.ceil(Date.now() / 1000));
         let actualEndTime = args.endTime || actualStartTime + 3600n;
-        blockchain.now = Number(actualStartTime);
+        // blockchain.now = Number(actualStartTime); We should set this time before we operate on the contract
         const thunderDrop = blockchain.openContract(
             ThunderDrop.createFromConfig(
                 {
@@ -176,6 +176,8 @@ describe('ThunderDrop', () => {
             mockJetton: jetton,
         });
         await transferJetton(jetton, deployer, thunderDrop.address, totalAmount, deployer.address, toNano('1'), null);
+        const thunderDropData = await thunderDrop.getThunderDropData();
+        blockchain.now = Number(thunderDropData.startTime) + 1;
         return {
             merkleData,
             tree,
@@ -189,8 +191,8 @@ describe('ThunderDrop', () => {
         deployer = await blockchain.treasury('deployer');
         printTxGasStats = (name, transaction) => {
             const txComputed = computedGeneric(transaction);
-            // console.log(`${name} used ${txComputed.gasUsed} gas`);
-            // console.log(`${name} gas cost: ${txComputed.gasFees}`);
+            console.log(`${name} used ${txComputed.gasUsed} gas`);
+            console.log(`${name} gas cost: ${txComputed.gasFees}`);
             return txComputed.gasFees;
         };
     });
@@ -270,6 +272,17 @@ describe('ThunderDrop', () => {
         const proof = tree.getProofBuffer(0n);
         const isValidProof = tree.verifyProof(merkleData[0], proof);
         expect(isValidProof).toEqual(true);
+
+        // Calculate Jetton Master Bond contract gas fee
+        const smc = await blockchain.getContract(thunderDrop.address);
+        if (smc.accountState === undefined) throw new Error("Can't access wallet account state");
+        if (smc.accountState.type !== 'active') throw new Error('Wallet account is not active');
+        if (smc.account.account === undefined || smc.account.account === null)
+            throw new Error("Can't access wallet account!");
+        console.log('Thunder Drop max storage stats:', smc.account.account.storageStats.used);
+        const state = smc.accountState.state;
+        const stateCell = beginCell().store(storeStateInit(state)).endCell();
+        console.log('State init stats:', collectCellStats(stateCell, []));
     });
 
     it('Should claim jetton', async () => {
@@ -308,6 +321,7 @@ describe('ThunderDrop', () => {
             to: thunderDrop.address,
             success: true,
         });
+
         // Calculate gas fee for claiming airdrop
         const claimTx = findTransactionRequired(claimResult.transactions, {
             op: DropOpcodes.Claim,
@@ -316,6 +330,7 @@ describe('ThunderDrop', () => {
             success: true,
         });
         printTxGasStats('User claim gas fee:', claimTx);
+
         const distributorAddress = await thunderDrop.getDistributorAddress(index);
         expect(claimResult.transactions).toHaveTransaction({
             op: 0xca03fb47, // claim internal
@@ -324,6 +339,16 @@ describe('ThunderDrop', () => {
             deploy: true,
             success: true,
         });
+
+        // Calculate gas fee for claim internal
+        const claimInternalTx = findTransactionRequired(claimResult.transactions, {
+            op: 0xca03fb47, // claim internal
+            from: thunderDrop.address,
+            to: distributorAddress,
+            success: true,
+        });
+        printTxGasStats('User claim internal gas fee:', claimInternalTx);
+
         expect(claimResult.transactions).toHaveTransaction({
             op: 0xd4a4cd9c, // claim internal reply
             from: distributorAddress,
@@ -331,9 +356,29 @@ describe('ThunderDrop', () => {
             success: true,
         });
 
+        // Calculate gas fee for claim internal reply
+        const claimInternaReplylTx = findTransactionRequired(claimResult.transactions, {
+            op: 0xd4a4cd9c, // claim internal reply
+            from: distributorAddress,
+            to: thunderDrop.address,
+            success: true,
+        });
+        printTxGasStats('User claim internal reply gas fee:', claimInternaReplylTx);
+
         // get account jetton balance after claim
         const accountBalanceAfter = await getJettonBalance(jetton, account);
         expect(accountBalanceAfter).toEqual(accountBalanceBefore + amount);
+
+        // Calculate Distributor contract gas fee
+        const smc2 = await blockchain.getContract(distributorAddress);
+        if (smc2.accountState === undefined) throw new Error("Can't access wallet account state");
+        if (smc2.accountState.type !== 'active') throw new Error('Wallet account is not active');
+        if (smc2.account.account === undefined || smc2.account.account === null)
+            throw new Error("Can't access wallet account!");
+        console.log('Distributor max storage stats:', smc2.account.account.storageStats.used);
+        const state2 = smc2.accountState.state;
+        const stateCell2 = beginCell().store(storeStateInit(state2)).endCell();
+        console.log('State init stats:', collectCellStats(stateCell2, []));
     });
 
     it("Should fail to withdraw if it's not the end time", async () => {
@@ -451,6 +496,100 @@ describe('ThunderDrop', () => {
             to: thunderDrop.address,
             success: false,
             exitCode: DropExitCodes.NotInitialized,
+        });
+    });
+
+    it('Should fail to claim if now < start time', async () => {
+        const { merkleData, totalAmount } = await generateMerkleData(10);
+        const tree = MerkleTree.fromMerkleData(merkleData);
+        const { jetton } = await deployMockJetton(deployer);
+        await mintJetton(deployer, jetton, deployer.address, totalAmount);
+        const { thunderDrop } = await deployThunderDrop(deployer, {
+            merkleRoot: bufferToBigInt(tree.getRoot()),
+            expectedAmount: totalAmount,
+            mockJetton: jetton,
+            startTime: BigInt(Math.ceil(Date.now() / 1000)) + 3600n,
+        });
+        // Only transfer totalAmount to thunderDrop, but it need totalAmount * 100
+        await transferJetton(jetton, deployer, thunderDrop.address, totalAmount, deployer.address, toNano('1'), null);
+
+        const thunderDropData = await thunderDrop.getThunderDropData();
+        blockchain.now = Number(thunderDropData.startTime) - 1;
+
+        // User try to claim
+        const index = 0n;
+        const account = merkleData[0].account;
+        const amount = merkleData[0].amount;
+        const proof = tree.getProof(0n);
+        const claimResult = await thunderDrop.sendClaim(
+            deployer.getSender(),
+            {
+                value: toNano('0.5'),
+            },
+            {
+                $$type: 'Claim',
+                queryId: 0n,
+                merkleProof: proof,
+                index: index,
+                account: account,
+                amount: amount,
+            },
+        );
+
+        // Expect to thrwo not_started error (501)
+        expect(claimResult.transactions).toHaveTransaction({
+            op: DropOpcodes.Claim,
+            from: deployer.address,
+            to: thunderDrop.address,
+            success: false,
+            exitCode: DropExitCodes.NotStarted,
+        });
+    });
+
+    it('Should fail to claim if now > end time', async () => {
+        const { merkleData, totalAmount } = await generateMerkleData(10);
+        const tree = MerkleTree.fromMerkleData(merkleData);
+        const { jetton } = await deployMockJetton(deployer);
+        await mintJetton(deployer, jetton, deployer.address, totalAmount);
+        const { thunderDrop } = await deployThunderDrop(deployer, {
+            merkleRoot: bufferToBigInt(tree.getRoot()),
+            expectedAmount: totalAmount,
+            mockJetton: jetton,
+            startTime: BigInt(Math.ceil(Date.now() / 1000)) + 3600n,
+        });
+        // Only transfer totalAmount to thunderDrop, but it need totalAmount * 100
+        await transferJetton(jetton, deployer, thunderDrop.address, totalAmount, deployer.address, toNano('1'), null);
+
+        const thunderDropData = await thunderDrop.getThunderDropData();
+        blockchain.now = Number(thunderDropData.endTime) + 1;
+
+        // User try to claim
+        const index = 0n;
+        const account = merkleData[0].account;
+        const amount = merkleData[0].amount;
+        const proof = tree.getProof(0n);
+        const claimResult = await thunderDrop.sendClaim(
+            deployer.getSender(),
+            {
+                value: toNano('0.5'),
+            },
+            {
+                $$type: 'Claim',
+                queryId: 0n,
+                merkleProof: proof,
+                index: index,
+                account: account,
+                amount: amount,
+            },
+        );
+
+        // Expect to thrwo already_finished error (502)
+        expect(claimResult.transactions).toHaveTransaction({
+            op: DropOpcodes.Claim,
+            from: deployer.address,
+            to: thunderDrop.address,
+            success: false,
+            exitCode: DropExitCodes.Finished,
         });
     });
 });

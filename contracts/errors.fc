@@ -16,3 +16,4 @@ const error::not_initialized = 506;
 const error::is_initialized = 507;
 const error::pending_claim = 508;
 const error::not_finished = 509;
+const error::not_enough_gas = 510;

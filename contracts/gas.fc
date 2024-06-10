@@ -1,0 +1,51 @@
+;; Storage Duration
+const MIN_STORAGE_DURATION = 5 * 24 * 3600; ;; 4 days
+const THUNDER_DROP_BITS = 11766;
+const THUNDER_DROP_CELLS = 42;
+const CLAIM_FEE = 18529;
+const CLAIM_INTERNAL = 6027;
+const CLAIM_INTERNAL_REPLY = 10896;
+
+const DISTRIBUTOR_BITS = 3304;
+const DISTRIBUTOR_CELLS = 13;
+
+const SEND_TRANSFER_GAS_CONSUMPTION    = 9255;
+const RECEIVE_TRANSFER_GAS_CONSUMPTION = 10355;
+
+int calculate_thunder_drop_min_storage_fee() inline {
+    return get_storage_fee(MY_WORKCHAIN, MIN_STORAGE_DURATION, THUNDER_DROP_BITS, THUNDER_DROP_CELLS);
+}
+
+int forward_distributor_init_state_overhead() inline {
+    return get_simple_forward_fee(MY_WORKCHAIN, DISTRIBUTOR_BITS, DISTRIBUTOR_CELLS);
+}
+
+int get_jetton_transfer_fee() inline {
+    int thunder_drop_gas_consumption = get_precompiled_gas_consumption();
+    int send_transfer_gas_consumption = null?(thunder_drop_gas_consumption) ? SEND_TRANSFER_GAS_CONSUMPTION : thunder_drop_gas_consumption;
+    int receive_transfer_gas_consumption = null?(thunder_drop_gas_consumption) ? RECEIVE_TRANSFER_GAS_CONSUMPTION : thunder_drop_gas_consumption;
+    return get_compute_fee(MY_WORKCHAIN, send_transfer_gas_consumption) + get_compute_fee(MY_WORKCHAIN, receive_transfer_gas_consumption);
+}
+
+
+(int, int) cal_claim_fee(int fwd_fee) {
+    int thunder_drop_gas_consumption = get_precompiled_gas_consumption();
+    int claim_gas_consumption = null?(thunder_drop_gas_consumption) ? CLAIM_FEE : thunder_drop_gas_consumption;
+    int claim_internal_gas_consumption = null?(thunder_drop_gas_consumption) ? CLAIM_INTERNAL : thunder_drop_gas_consumption;
+    int claim_internal_reply_gas_consumption = null?(thunder_drop_gas_consumption) ? CLAIM_INTERNAL_REPLY : thunder_drop_gas_consumption;
+
+
+    
+    int gas_comp = get_compute_fee(MY_WORKCHAIN, claim_gas_consumption) + 
+    calculate_thunder_drop_min_storage_fee() +
+    forward_distributor_init_state_overhead();
+    
+
+    int total_fee = gas_comp + 
+    fwd_fee * 5 +
+    get_compute_fee(MY_WORKCHAIN, claim_internal_gas_consumption) +
+    get_compute_fee(MY_WORKCHAIN, claim_internal_reply_gas_consumption) +
+    get_jetton_transfer_fee();
+
+    return (total_fee, gas_comp);
+}

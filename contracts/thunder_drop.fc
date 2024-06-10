@@ -4,6 +4,7 @@
 #include "./opcodes.fc";
 #include "./constants.fc";
 #include "./utils.fc";
+#include "./gas.fc";
 
 (int) sha256(int a, int b) inline {
     return begin_cell().store_uint(a, 256).store_uint(b, 256).end_cell().cell_hash();
@@ -45,7 +46,9 @@
         ctx::body.end_parse();
 
         ;; TODO: check if gas is enough
-        int value = ctx::value - get_compute_fee(MY_WORKCHAIN, CLAIM_FEE);
+        (int total_fee, int gas_consumption) = cal_claim_fee(ctx::fwd_fee);
+        throw_unless(error::not_enough_gas, ctx::value >= total_fee);
+        int value = ctx::value - gas_consumption;
 
         ;; check if there is enough jetton to claim
         throw_unless(error::permission_denied, airdrop::total_amount >= amount);
