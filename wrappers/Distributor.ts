@@ -37,8 +37,8 @@ export class Distributor implements Contract {
                 value: index,
             },
         ]);
-        const content = result.stack.readCell().beginParse();
-        return content.loadStringTail();
+        const content = result.stack.readBigNumber();
+        return content;
     }
 
     async getDistributorData(provider: ContractProvider) {
