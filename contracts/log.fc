@@ -1,0 +1,14 @@
+const log::claim = "log::claim"c; ;; b91c9cb2
+
+() emit::cliam(
+    slice account,
+    int amount,
+    int query_id
+) impure inline_ref {
+
+    builder log = begin_cell()
+        .store_slice(account)
+        .store_coins(amount)
+        .store_query_id(query_id);
+    emit_log(log::claim, log);
+}

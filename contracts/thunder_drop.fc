@@ -4,7 +4,7 @@
 #include "./opcodes.fc";
 #include "./utils.fc";
 #include "./gas.fc";
-
+#include "log.fc";
 (int) sha256(int a, int b) inline {
     return begin_cell().store_uint(a, 256).store_uint(b, 256).end_cell().cell_hash();
 }
@@ -103,6 +103,7 @@
         ;; otherwise, success, then send jetton to account
         airdrop::pending -= 1;
         transfer_jetton(BOUNCEABLE, account, airdrop::wallet_address, amount, ctx::value, query_id, null(), 0, SEND_MODE_REGULAR);
+        emit::cliam(account, amount , query_id);
         airdrop::save_data();
 
         return ();
